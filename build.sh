@@ -15,7 +15,7 @@ fi
 
 echo "== encode"
 mkdir -p output
-ffmpeg -y -hide_banner -loglevel warning -stats \
+ffmpeg -y -hide_banner -loglevel warning \
   -framerate 30 -i render/frames/f%05d.png \
   -i audio/build/narration.wav -i audio/build/music.wav \
   -filter_complex "\
