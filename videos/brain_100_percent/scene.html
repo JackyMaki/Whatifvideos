@@ -206,7 +206,7 @@ window.renderAt = function (t) {
     const u = (t - w.t0) / w.dur;
     if (u <= 0 || u >= 1) { w.s.material.opacity = 0; continue; }
     const rad = lerp(0.6, w.rad, smooth(u * 1.4)); const az = w.az + u * w.drift;
-    w.s.position.set(Math.sin(az) * rad, brain.position.y + 0.6 + u * 3.2, Math.cos(az) * rad * 0.5 + 1.5);
+    const side = Math.sin(az) >= 0 ? 1 : -1; w.s.position.set(side * (2.6 + rad * 0.55), brain.position.y - 0.6 + u * 1.4, Math.cos(az) * rad * 0.4 + 1.5);   // beside the brain, under the title
     const sc = (0.6 + 0.4 * smooth(u * 3)) * 1.05; w.s.scale.set(4 * sc, 1.5 * sc, 1); w.s.material.opacity = win(u, 0, 1, 0.15, 0.3);
   }
   for (const c of crystals) {
