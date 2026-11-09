@@ -219,10 +219,10 @@ export function createOverlay({ highlight = /$^/, titleEnd = 5.6, skipCaptionIds
   const ui = { title: el('title'), cap: el('cap'), capInner: el('capInner'), footer: el('footer'), hud: el('hud'), hudSub: el('hudSub') };
   window.setCaptions = lines => { CAPTIONS = lines; };
   function update(t) {
-    if (ui.title) {
-      const inU = smooth((t - 0.25) / 1.1); const shrink = smooth((t - titleEnd) / 1.4);
-      ui.title.style.opacity = inU * (t > 59.4 ? smooth((60.5 - t) / 1.1) : 1);
-      ui.title.style.transform = `translateY(${(1 - inU) * 30 - shrink * 150}px) scale(${lerp(lerp(0.97, 1, inU), 0.72, shrink)})`;
+    if (ui.title) {   // the question is shown only while it is being asked (first ~5 s), then fades out
+      const inU = smooth((t - 0.25) / 1.1);
+      ui.title.style.opacity = win(t, 0.25, titleEnd, 1.1, 0.8);
+      ui.title.style.transform = `translateY(${(1 - inU) * 30}px) scale(${lerp(0.97, 1, inU)})`;
     }
     const hudOn = win(t, hudFrom == null ? titleEnd : hudFrom, 60.5, 0.8, 0.1);
     if (ui.hud) ui.hud.style.opacity = hudOn;
