@@ -1,5 +1,4 @@
-# generated intermediates (rebuild with ./build.sh)
-render/frames/
-render/preview/
-audio/build/*.wav
+# generated intermediates (rebuild with ./build.sh <video>)
+build/
 node_modules/
+__pycache__/

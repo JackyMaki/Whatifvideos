@@ -1,43 +1,59 @@
 # What-if videos
 
-Procedurally generated short-form explainer videos. Everything (3D scene, narration, music,
-captions) is built from code, so a video can be re-rendered or tweaked by editing a few files.
+Procedurally generated short-form explainer videos in a shared low-poly style. Everything
+(3D scene, narration, music, captions) is built from code, so a video can be re-rendered or
+tweaked by editing a few files, and a new episode is a new folder under `videos/`.
 
-## Current video: *What if you used 100% of your brain?*
+## Episodes
 
-* `output/what_if_100_percent_brain_9x16.mp4` — the finished video, 1080×1920 (9:16), 60 s, 30 fps
-* `output/poster.jpg` — poster frame
-* `output/description.md` — post description, full narration transcript and scene-by-scene breakdown
+| Slug | Video | Poster | Notes |
+|------|-------|--------|-------|
+| `brain_100_percent` | `output/brain_100_percent/what_if_100_percent_brain_9x16.mp4` | `output/brain_100_percent/poster.jpg` | A floating brain lights up as the day passes: learning, recall, hunger, a midnight storm, calm. |
+| `future_100_years` | `output/future_100_years/what_if_woke_up_100_years_future_9x16.mp4` | `output/future_100_years/poster.jpg` | A sleeper wakes in 2126: the town sinks, a skyline rises, flying cars, holo screens, worthless coins, a DNA helix, back to sleep. |
 
-A single low-poly brain floats over a faceted valley while a full day passes: sunrise → noon →
-sunset → midnight storm → calm night. Each scene matches one line of narration.
+Every episode is 1080×1920 (9:16), exactly 60 s at 30 fps, H.264 + AAC, loudness-normalised to
+−14 LUFS. Each `output/<slug>/description.md` has the post text, full narration transcript and a
+scene-by-scene breakdown.
 
-## How it is made
+## Layout
 
-| Piece | File | Notes |
-|-------|------|-------|
-| 3D scene | `render/scene.html` | three.js, flat-shaded low-poly geometry, HTML/CSS overlay for title, captions and the "brain in use" meter. Every frame is a pure function of time `t`, so frames render in any order. |
-| Frame renderer | `render/render_frames.js` | Playwright drives headless Chromium (SwiftShader WebGL) and screenshots 1800 PNG frames across N parallel workers. `--preview 2,9,38` renders single test frames. |
-| Narration | `script/narration.json`, `audio/make_narration.py` | Timed lines synthesised with espeak-ng + the MBROLA `en1` voice, EQ'd, compressed and loudness-normalised, then placed on a 60 s timeline. |
-| Music | `audio/make_music.py` | numpy-only ambient score: pads, plucked arpeggios, a heartbeat at sunset, a pulsing dissonant drone with thunder at midnight, a D-major resolution at the end. |
-| Build | `build.sh` | Runs the steps above, then ffmpeg mixes voice + side-chain-ducked music, normalises to −14 LUFS and encodes H.264/AAC with faststart. |
-
-### Rebuild
-
-Requirements: Node 18+ with `playwright` (and its Chromium), Python 3 with numpy, ffmpeg,
-`espeak-ng` plus `mbrola` and `mbrola-en1` (Debian/Ubuntu packages).
-
-```bash
-./build.sh              # full pipeline (~15 min on 4 cores, most of it frame rendering)
-./build.sh encode       # re-mux only, after editing audio
-node render/render_frames.js --preview 2,13.6,38,47   # check single frames in render/preview/
+```
+render/common.js            shared world: deterministic helpers, sky/sun/moon/stars, terrain, mountains,
+                            trees, clouds, the day cycle, caption/clock/title overlay
+render/render_frames.js     Playwright + headless Chromium frame renderer (parallel workers)
+render/lib/                 vendored three.js (MIT)
+audio/make_narration.py     espeak-ng + MBROLA voice, EQ, loudness, timeline placement
+audio/synth.py              tiny numpy synth (pads, plucks, arpeggios, drones, reverb)
+videos/<slug>/scene.html    the episode's 3D scene and HUD, built on common.js
+videos/<slug>/narration.json  title, output file name, voice, timed narration lines
+videos/<slug>/music.py      the episode's score, written with audio/synth.py
+build/<slug>/               generated frames + audio (git-ignored)
+output/<slug>/              final MP4, poster frame, description
+build.sh                    runs the whole pipeline for one episode
 ```
 
-### Tweaking
+Every frame is a pure function of time `t`, so frames render in any order across workers and a
+re-render of a single second is just `--preview`.
 
-* Change the words or timing in `script/narration.json`; captions and voice follow automatically.
-* Scene timing lives at the top of the timeline section of `render/scene.html`
-  (`SKY`, `sunElev`, `brainPower`, `ACT_COLOR`, `CAM`).
-* The brain strobe at midnight is deliberately limited to 1.6 pulses/s; keep flashing below 3 Hz.
+## Rebuild
 
-three.js is vendored in `render/lib/` under the MIT licence (`render/lib/THREE_LICENSE`).
+Requirements: Node 18+ with `playwright` (and its Chromium), Python 3 with numpy and Pillow,
+ffmpeg, `espeak-ng` plus `mbrola` and `mbrola-en1` (Debian/Ubuntu packages).
+
+```bash
+./build.sh future_100_years            # full pipeline (~15 min on 4 cores, mostly frame rendering)
+./build.sh future_100_years encode     # re-mux only, after editing audio
+node render/render_frames.js --video future_100_years --preview 2,13,27,47   # single frames -> build/<slug>/preview/
+```
+
+## Making a new episode
+
+1. Copy a folder under `videos/` and give it a new slug.
+2. Write the seven narration lines in `narration.json` (starts at 0.8, 6, 15, 24, 33, 43.5, 52.5 s work well
+   for a 60 s cut); run `python3 audio/make_narration.py <slug>` and check no line overruns the next.
+3. Build the scene in `scene.html` on top of `createWorld` / `createOverlay` from `render/common.js`:
+   add props, a HUD, camera keyframes and a `window.renderAt(t)`.
+4. Arrange the score in `music.py` with `Song` from `audio/synth.py`, one section per narration beat.
+5. `./build.sh <slug>`.
+
+Keep any flashing below 3 Hz (the brain episode's midnight strobe is 1.6 pulses/s).

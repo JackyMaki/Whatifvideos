@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What if you used 100% of your brain — low poly scene</title>
+<style>
+  #title .big { background-image: linear-gradient(180deg, #fff6d6 0%, #ffd166 45%, #ff8a3d 100%); filter: drop-shadow(0 12px 40px rgba(255, 140, 60, .45)); }
+  #meterLabel { font-size: 30px; font-weight: 600; letter-spacing: 0.22em; opacity: .92; text-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  #meterRow { display: flex; align-items: center; gap: 24px; margin-top: 16px; }
+  #meterBar { flex: 1; height: 22px; border-radius: 11px; background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(255,255,255,.22), 0 6px 24px rgba(0,0,0,.35); overflow: hidden; }
+  #meterFill { height: 100%; width: 10%; border-radius: 11px; background: linear-gradient(90deg, #3ee0ff, #7cf5ff); box-shadow: 0 0 24px #3ee0ff; }
+  #meterPct { font-size: 56px; font-weight: 800; min-width: 170px; text-align: right; font-variant-numeric: tabular-nums; text-shadow: 0 4px 16px rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="ui">
+  <div id="title" class="abs"><div class="l1">WHAT IF YOU USED</div><div class="big">100%</div><div class="l2">OF YOUR BRAIN?</div></div>
+  <div id="hud" class="abs"><div id="meterLabel">BRAIN IN USE</div><div id="meterRow"><div id="meterBar"><div id="meterFill"></div></div><div id="meterPct">10%</div></div></div>
+  <div id="clock" class="abs"><span id="clockTime">06:00 · SUNRISE</span></div>
+  <div id="cap" class="abs"><div id="capInner"></div></div>
+  <div id="footer" class="abs">A LOW POLY WHAT‑IF</div>
+</div>
+
+<script type="module">
+import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, photoTexture, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+injectBaseCss();
+
+const world = createWorld({ seed: 1337, canvas: document.getElementById('c') });
+const { rng, R, renderer, scene, camera, skyMat, hemi, trunkMat, leafMats } = world;
+const brainLight = new THREE.PointLight(0x3ee0ff, 0, 30, 1.6); scene.add(brainLight);
+
+// ---------------------------------------------------------------------------
+// The brain: two lobes of icosahedron folds, cerebellum, stem, glow halo, neural network, shockwave ring
+// ---------------------------------------------------------------------------
+const BRAIN_Y = 6.2;
+const brain = new THREE.Group(); brain.position.set(0, BRAIN_Y, 0); scene.add(brain);
+const bumps = [];
+const bumpGeo = new THREE.IcosahedronGeometry(1, 1);
+function addBump(pos, radius, tint) {
+  const mat = new THREE.MeshLambertMaterial({ color: tint, emissive: 0x000000, flatShading: true });
+  const m = new THREE.Mesh(bumpGeo, mat); m.position.copy(pos); m.scale.setScalar(radius); m.rotation.set(R(0, 6), R(0, 6), R(0, 6));
+  brain.add(m); bumps.push({ mesh: m, mat, rank: rng(), phase: R(0, 6.28), speed: R(1.5, 3.5), theta: Math.atan2(pos.z, pos.x), pos: pos.clone() });
+}
+{
+  const N = 84, phi = Math.PI * (3 - Math.sqrt(5));
+  for (const side of [-1, 1]) for (let i = 0; i < N; i++) {
+    const y = 1 - (i / (N - 1)) * 2, rr = Math.sqrt(1 - y * y), th = phi * i;
+    const nx = Math.cos(th) * rr, ny = y, nz = Math.sin(th) * rr;
+    if (side * nx < -0.28) continue; if (ny < -0.62 && nz < 0) continue;
+    addBump(new THREE.Vector3(side * 0.72 + nx * 1.12, ny * 0.98, nz * 1.42), R(0.26, 0.36), new THREE.Color('#f9b9c2').offsetHSL(R(-0.015, 0.015), R(-0.05, 0.05), R(-0.05, 0.05)));
+  }
+  for (let i = 0; i < 16; i++) { const az = R(-1.3, 1.3), el = R(-0.4, 0.5); addBump(new THREE.Vector3(Math.sin(az) * 0.8, -0.95 + Math.sin(el) * 0.45, -0.95 - Math.cos(az) * 0.55), R(0.18, 0.26), new THREE.Color('#eea2ae')); }
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 1.1, 6), new THREE.MeshLambertMaterial({ color: 0xd98894, flatShading: true }));
+  stem.position.set(0, -1.45, -0.45); stem.rotation.x = 0.35; brain.add(stem);
+}
+const links = [];
+for (let i = 0; i < bumps.length; i++) for (let j = i + 1; j < bumps.length; j++) { if (bumps[i].pos.distanceTo(bumps[j].pos) < 0.78 && rng() < 0.55) links.push([i, j, R(0, 6.28), R(1.2, 3)]); }
+const linkPos = new Float32Array(links.length * 6), linkCol = new Float32Array(links.length * 6);
+links.forEach(([i, j], k) => { const a = bumps[i].pos.clone().multiplyScalar(1.09), b = bumps[j].pos.clone().multiplyScalar(1.09); linkPos.set([a.x, a.y, a.z, b.x, b.y, b.z], k * 6); });
+const linkGeo = new THREE.BufferGeometry(); linkGeo.setAttribute('position', new THREE.BufferAttribute(linkPos, 3)); linkGeo.setAttribute('color', new THREE.BufferAttribute(linkCol, 3));
+const linkMesh = new THREE.LineSegments(linkGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false })); linkMesh.renderOrder = 5; brain.add(linkMesh);
+const nodePos = new Float32Array(bumps.length * 3), nodeCol = new Float32Array(bumps.length * 3);
+bumps.forEach((b, i) => { const p = b.pos.clone().multiplyScalar(1.1); nodePos.set([p.x, p.y, p.z], i * 3); });
+const nodeGeo = new THREE.BufferGeometry(); nodeGeo.setAttribute('position', new THREE.BufferAttribute(nodePos, 3)); nodeGeo.setAttribute('color', new THREE.BufferAttribute(nodeCol, 3));
+const nodeMesh = new THREE.Points(nodeGeo, new THREE.PointsMaterial({ size: 16, sizeAttenuation: false, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, map: radialTexture(), alphaTest: 0.01 })); nodeMesh.renderOrder = 6; brain.add(nodeMesh);
+const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0x3ee0ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); halo.scale.setScalar(11); halo.position.set(0, BRAIN_Y, -0.2); scene.add(halo);
+const shadowBlob = new THREE.Mesh(new THREE.CircleGeometry(1.9, 8), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false })); shadowBlob.rotation.x = -Math.PI / 2; shadowBlob.position.set(0, -0.55, 0); scene.add(shadowBlob);
+const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.08, 6, 48), new THREE.MeshBasicMaterial({ color: 0x9ff3ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); ring.position.set(0, BRAIN_Y, 0); scene.add(ring);
+
+// ---------------------------------------------------------------------------
+// Props: books + greetings (15-24), crystals/photos/numbers (24-33), embers + food (33-43.5), lightning (43.5-52.5)
+// ---------------------------------------------------------------------------
+const flyers = [];
+function makeFlyer(obj, t0, dur) {
+  const az = R(0, 6.28), el = R(-0.25, 0.55), dist = R(11, 15);
+  const from = new THREE.Vector3(Math.sin(az) * dist, BRAIN_Y + Math.sin(el) * dist * 0.8, Math.cos(az) * dist * 0.8 - 2);
+  const ctrl = from.clone().multiplyScalar(0.45).add(new THREE.Vector3(0, BRAIN_Y * 0.55 + R(2, 5), 0));
+  obj.traverse(o => { if (o.isMesh && o.material.emissive) { o.material = o.material.clone(); o.material.emissive.copy(o.material.color).multiplyScalar(0.28); } });
+  obj.visible = false; scene.add(obj); flyers.push({ obj, t0, dur, from, ctrl, spin: new THREE.Vector3(R(-3, 3), R(-3, 3), R(-3, 3)) });
+}
+const coverPalette = ['#e05a4f', '#3b7dd8', '#f2b134', '#5aa65a', '#8e5ad8', '#ff8a3d', '#2fb5a3', '#d84f8e'];
+for (let i = 0; i < 26; i++) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.3, 0.22), new THREE.MeshLambertMaterial({ color: coverPalette[i % coverPalette.length], flatShading: true })));
+  const pages = new THREE.Mesh(new THREE.BoxGeometry(0.86, 1.2, 0.17), new THREE.MeshLambertMaterial({ color: 0xfff5e0, flatShading: true })); pages.position.x = 0.07; g.add(pages);
+  makeFlyer(g, 15.2 + i * 0.27 + R(-0.08, 0.08), 2.3);
+}
+const greetings = [['Hola', '#ffd166'], ['Bonjour', '#7cf5ff'], ['こんにちは', '#ff9fb0'], ['Hallo', '#b8ff7a'], ['Ciao', '#ffb347'], ['Olá', '#c7a6ff'], ['Привет', '#7cf5ff'], ['Jambo', '#ffd166'], ['안녕', '#ff9fb0'], ['Merhaba', '#b8ff7a']];
+const words = greetings.map(([w, col], i) => ({ s: textSprite(scene, w, { color: col }), t0: 16.0 + i * 0.58, dur: 2.6, az: R(0, 6.28), rad: R(1.6, 2.6), drift: R(-0.6, 0.6) }));
+
+const crystals = [];
+const crystalMat = new THREE.MeshLambertMaterial({ color: 0x9ff3ff, emissive: 0x2fb5d8, emissiveIntensity: 0.6, flatShading: true, transparent: true, opacity: 0.95 });
+for (let ringI = 0; ringI < 2; ringI++) for (let i = 0; i < 11; i++) {
+  const m = new THREE.Mesh(new THREE.OctahedronGeometry(R(0.22, 0.36), 0), crystalMat); m.visible = false; scene.add(m);
+  crystals.push({ m, a0: (i / 11) * 6.28 + ringI * 0.3, rad: ringI === 0 ? 2.9 : 3.9, tilt: ringI === 0 ? 0.45 : -0.6, speed: ringI === 0 ? 0.9 : -0.6, delay: i * 0.08 + ringI * 0.5, spin: R(1, 3) });
+}
+const photos = [];
+for (let i = 0; i < 8; i++) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.125), new THREE.MeshBasicMaterial({ map: photoTexture(100 + i), side: THREE.DoubleSide, transparent: true, opacity: 0 }));
+  m.visible = false; scene.add(m); photos.push({ m, a0: (i / 8) * 6.28, rad: 4.4, speed: 0.35, bob: R(0, 6.28), delay: 0.6 + i * 0.12 });
+}
+const numbers = ['3.14159265', '1998', '14:32', 'π', '4,096', 'Tuesday', '∞', 'E=mc²'].map((n, i) => ({ s: textSprite(scene, n, { color: i % 2 ? '#ffd166' : '#ffffff', size: 130 }), t0: 25.2 + i * 0.75, dur: 3.0, az: R(0, 6.28), rad: R(2.0, 2.8), drift: R(-0.6, 0.6) }));
+
+const emberCount = 110, emberPos = new Float32Array(emberCount * 3), emberSeed = [];
+for (let i = 0; i < emberCount; i++) emberSeed.push({ az: R(0, 6.28), rad: R(0.6, 2.4), phase: rng(), speed: R(0.22, 0.45), wob: R(0, 6.28) });
+const emberGeo = new THREE.BufferGeometry(); emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPos, 3));
+const embers = new THREE.Points(emberGeo, new THREE.PointsMaterial({ color: 0xff8a3d, size: 20, sizeAttenuation: false, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, map: radialTexture(), alphaTest: 0.01 })); embers.renderOrder = 4; scene.add(embers);
+const lam = c => new THREE.MeshLambertMaterial({ color: c, flatShading: true });
+function apple() { const g = new THREE.Group(); const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1), lam(0xe03b2f)); b.scale.y = 0.9; const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 4), trunkMat); stem.position.y = 0.55; const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 4), leafMats[1]); leaf.position.set(0.18, 0.6, 0); leaf.rotation.z = -1.2; g.add(b, stem, leaf); return g; }
+function burger() { const g = new THREE.Group(); const bottom = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.5, 0.22, 8), lam(0xe8a553)); bottom.position.y = -0.3; const patty = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.18, 8), lam(0x6b3a1e)); patty.position.y = -0.1; const cheese = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 1.1), lam(0xffc93c)); cheese.position.y = 0.02; cheese.rotation.y = 0.4; const lettuce = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.6, 0.08, 7), lam(0x6bb04a)); lettuce.position.y = 0.1; const top = new THREE.Mesh(new THREE.SphereGeometry(0.58, 8, 4, 0, 6.28, 0, 1.57), lam(0xe8a553)); top.position.y = 0.14; g.add(bottom, patty, cheese, lettuce, top); return g; }
+function pizza() { const g = new THREE.Group(); const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(-0.5, 1.3); shape.lineTo(0.5, 1.3); shape.closePath(); const slice = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false }), lam(0xffc93c)); const crust = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 0.2), lam(0xd99a4e)); crust.position.set(0, 1.3, 0.05); for (let k = 0; k < 3; k++) { const pep = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.06, 7), lam(0xb8322a)); pep.rotation.x = Math.PI / 2; pep.position.set(R(-0.25, 0.25), R(0.5, 1.1), 0.12); slice.add(pep); } g.add(slice, crust); g.rotation.z = Math.PI; return g; }
+[apple, burger, pizza, apple, burger, apple, pizza, burger, apple, pizza, apple, burger].forEach((mk, i) => makeFlyer(mk(), 36.2 + i * 0.5 + R(-0.1, 0.1), 2.1));
+
+const bolts = [];
+for (let i = 0; i < 9; i++) {
+  const line = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xf4faff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  const sheath = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x8fb8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  const spark = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xdce9ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); spark.scale.setScalar(2.2);
+  line.visible = sheath.visible = spark.visible = false; scene.add(line, sheath, spark); bolts.push({ line, sheath, spark, phase: R(0, 1), period: R(0.55, 1.1), seed: -1 });
+}
+function buildBolt(bolt, seed) {
+  if (bolt.seed === seed) return; bolt.seed = seed;
+  const r = mulberry32(seed); const az = r() * 6.28, el = (r() - 0.3) * 1.4, dist = 4.5 + r() * 3;
+  const start = new THREE.Vector3(Math.sin(az) * dist, BRAIN_Y + Math.sin(el) * dist, Math.cos(az) * dist * 0.6);
+  const end = new THREE.Vector3(Math.sin(az) * 1.3, BRAIN_Y + Math.sin(el) * 1.2, Math.cos(az) * 1.3);
+  const pts = [];
+  for (let k = 0; k < 14; k++) { const f = k / 13; const v = start.clone().lerp(end, f); const j = (1 - f) * 0.7; v.x += (r() - 0.5) * j; v.y += (r() - 0.5) * j; v.z += (r() - 0.5) * j; pts.push(v); }
+  const path = new THREE.CurvePath(); for (let k = 0; k < pts.length - 1; k++) path.add(new THREE.LineCurve3(pts[k], pts[k + 1]));
+  bolt.line.geometry.dispose(); bolt.line.geometry = new THREE.TubeGeometry(path, 52, 0.09, 4, false);
+  bolt.sheath.geometry.dispose(); bolt.sheath.geometry = new THREE.TubeGeometry(path, 52, 0.26, 5, false);
+  bolt.spark.position.copy(start);
+}
+
+// ---------------------------------------------------------------------------
+// Timeline: brain power, activation colour, camera, HUD
+// ---------------------------------------------------------------------------
+const brainPower = t => t < 55 ? kf(t, [[0, 0.1], [11.6, 0.1], [12.0, 0.22], [12.6, 0.1], [13.1, 0.45], [13.5, 0.3], [14.4, 1]]) : 1;
+const ACT_COLOR = [[0, '#3ee0ff'], [31, '#3ee0ff'], [35, '#ff7a2e'], [42.5, '#ff5a1f'], [44.5, '#eaf6ff'], [51.5, '#eaf6ff'], [53.5, '#5fe8d2'], [60, '#5fe8d2']];
+const CAM = {
+  x: [[0, 0], [6, 0], [15, -1.6], [24, 1.4], [33, -1], [43.5, 0.6], [52.5, 0], [60, 0]],
+  y: [[0, 7.2], [6, 6.3], [15, 6.0], [24, 6.4], [33, 5.6], [43.5, 6.2], [52.5, 6.8], [60, 7.4]],
+  z: [[0, 21], [6, 16.5], [15, 14.5], [24, 13.5], [33, 17.5], [43.5, 12.5], [52.5, 15], [60, 18]],
+  ty: [[0, 7.0], [6, 6.0], [24, 6.0], [33, 5.6], [43.5, 6.2], [52.5, 6.6], [60, 7.6]],
+};
+const overlay = createOverlay({ highlight: /(one hundred percent|ten percent|myth|new language|entire library|perfect recall|a fifth of your energy|around the clock|every neuron fires at once|seizure|all of your brain|never all at once)/gi });
+const hud = { fill: document.getElementById('meterFill'), pct: document.getElementById('meterPct'), label: document.getElementById('meterLabel') };
+function updateHud(t) {
+  const p = brainPower(t);
+  const shown = t >= 43.5 && t < 52.5 ? 100 : Math.round(p * 100);
+  hud.fill.style.width = `${shown}%`; hud.pct.textContent = `${shown}%`;
+  const act = kfColor(t, ACT_COLOR).getStyle();
+  hud.fill.style.background = `linear-gradient(90deg, ${act}, #ffffff)`; hud.fill.style.boxShadow = `0 0 24px ${act}`;
+  if (t >= 43.5 && t < 52.5) { const s = 0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.6); hud.label.textContent = 'BRAIN IN USE · ALL AT ONCE'; hud.pct.style.color = `rgb(255, ${Math.round(255 - 150 * s)}, ${Math.round(255 - 150 * s)})`; }
+  else if (t >= 52.5) { hud.label.textContent = 'BRAIN IN USE · OVER A WHOLE DAY'; hud.pct.style.color = '#fff'; }
+  else { hud.label.textContent = 'BRAIN IN USE'; hud.pct.style.color = '#fff'; }
+}
+
+// ---------------------------------------------------------------------------
+// Per-frame update
+// ---------------------------------------------------------------------------
+const tmpV = new THREE.Vector3(), tmpC = new THREE.Color();
+window.renderAt = function (t) {
+  const midnightWin = t >= 43.5 && t < 52.5;
+  const { nt } = world.updateEnvironment(t, DAY, { cloudDrop: midnightWin ? DAY.night(t) * 6 : 0, cloudScale: midnightWin ? 1.35 : 1 });
+
+  const p = brainPower(t);
+  const actCol = kfColor(t, ACT_COLOR);
+  const midnight = midnightWin ? win(t, 43.5, 52.5, 0.6, 1.0) : 0;
+  const calm = t >= 52.5 ? smooth((t - 52.5) / 1.5) : 0;
+  const strobe = Math.pow(0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.6), 3);
+  brain.rotation.y = 0.45 + Math.sin(t * 0.25) * 0.35 + (midnightWin ? Math.sin(t * 17) * 0.01 : 0);
+  brain.rotation.z = Math.sin(t * 0.33) * 0.06;
+  brain.position.y = BRAIN_Y + Math.sin(t * 0.9) * 0.18;
+  brain.scale.setScalar(1 + midnight * strobe * 0.04 + (t > 33 && t < 43.5 ? Math.sin(t * 6) * 0.012 : 0));
+  halo.position.y = brain.position.y; ring.position.y = brain.position.y;
+  let glowSum = 0;
+  for (let i = 0; i < bumps.length; i++) {
+    const b = bumps[i]; let a;
+    if (calm > 0) { const wave = 0.5 + 0.5 * Math.sin(b.theta * 2 + b.pos.y * 1.5 - (t - 52.5) * 1.8); a = lerp(0.15, 1, smooth(wave * 1.3 - 0.15)) * calm + (1 - calm); }
+    else if (midnight > 0) a = (0.35 + 0.65 * strobe) * midnight + (1 - midnight) * (b.rank < p ? 1 : 0);
+    else a = b.rank < p ? 1 : 0;
+    const pulse = calm > 0 ? 1 : 0.7 + 0.3 * Math.sin(t * b.speed + b.phase);
+    const e = a * pulse * (calm > 0 ? 0.9 : 1);
+    b.mat.emissive.copy(actCol); b.mat.emissiveIntensity = e * 1.1; glowSum += e;
+    const c = tmpC.copy(actCol).multiplyScalar(e * (0.5 + 0.5 * Math.pow(Math.max(0, Math.sin(t * b.speed * 1.7 + b.phase)), 2)));
+    nodeCol[i * 3] = c.r; nodeCol[i * 3 + 1] = c.g; nodeCol[i * 3 + 2] = c.b;
+  }
+  const glow = glowSum / bumps.length;
+  for (let k = 0; k < links.length; k++) {
+    const [i, j, ph, sp] = links[k];
+    const on = Math.min(bumps[i].mat.emissiveIntensity, bumps[j].mat.emissiveIntensity);
+    const flash = Math.pow(Math.max(0, Math.sin(t * sp * 2 + ph)), 6) * 0.9 + 0.1;
+    const c = tmpC.copy(actCol).multiplyScalar(on * flash); linkCol.set([c.r, c.g, c.b, c.r, c.g, c.b], k * 6);
+  }
+  linkGeo.attributes.color.needsUpdate = true; nodeGeo.attributes.color.needsUpdate = true;
+  halo.material.color.copy(actCol); halo.material.opacity = glow * (0.42 + midnight * strobe * 0.4); halo.scale.setScalar(11 + glow * 3 + midnight * strobe * 3);
+  brainLight.color.copy(actCol); brainLight.intensity = glow * 34 * (1 + midnight * strobe * 1.5); brainLight.position.copy(brain.position);
+  const rw = (t - 13.4) / 1.4; ring.material.opacity = rw > 0 && rw < 1 ? (1 - rw) * 0.9 : 0; ring.scale.setScalar(1 + rw * 9); ring.rotation.x = Math.PI / 2 + 0.3; ring.material.color.copy(actCol);
+  shadowBlob.material.opacity = 0.22 * (1 - nt * 0.6);
+
+  for (const f of flyers) {
+    const u = (t - f.t0) / f.dur;
+    if (u <= 0 || u >= 1) { f.obj.visible = false; continue; }
+    f.obj.visible = true; const k = smooth(u);
+    tmpV.set(0, 0, 0).addScaledVector(f.from, (1 - k) * (1 - k)).addScaledVector(f.ctrl, 2 * (1 - k) * k).addScaledVector(brain.position, k * k);
+    f.obj.position.copy(tmpV); f.obj.rotation.set(f.spin.x * u * 2, f.spin.y * u * 2, f.spin.z * u * 2);
+    f.obj.scale.setScalar(Math.min(1, u * 6) * (1 - smooth((u - 0.72) / 0.28)));
+  }
+  for (const list of [words, numbers]) for (const w of list) {
+    const u = (t - w.t0) / w.dur;
+    if (u <= 0 || u >= 1) { w.s.material.opacity = 0; continue; }
+    const rad = lerp(0.6, w.rad, smooth(u * 1.4)); const az = w.az + u * w.drift;
+    w.s.position.set(Math.sin(az) * rad, brain.position.y + 0.6 + u * 3.2, Math.cos(az) * rad * 0.5 + 1.5);
+    const sc = (0.6 + 0.4 * smooth(u * 3)) * 1.05; w.s.scale.set(4 * sc, 1.5 * sc, 1); w.s.material.opacity = win(u, 0, 1, 0.15, 0.3);
+  }
+  for (const c of crystals) {
+    const on = win(t, 24.2 + c.delay, 32.6 + c.delay * 0.4, 0.7, 0.8); c.m.visible = on > 0; if (!on) continue;
+    const a = c.a0 + t * c.speed; const y = Math.sin(a) * Math.sin(c.tilt) * c.rad;
+    c.m.position.set(Math.cos(a) * c.rad, brain.position.y + y * 0.5 + 0.2, Math.sin(a) * Math.cos(c.tilt) * c.rad); c.m.scale.setScalar(on); c.m.rotation.set(t * c.spin, t * c.spin * 0.7, 0);
+  }
+  for (const ph of photos) {
+    const on = win(t, 24.6 + ph.delay, 32.4, 0.8, 0.8); ph.m.visible = on > 0; if (!on) continue;
+    const a = ph.a0 + t * ph.speed; ph.m.position.set(Math.cos(a) * ph.rad, brain.position.y + 0.4 + Math.sin(t * 1.3 + ph.bob) * 0.35, Math.sin(a) * ph.rad * 0.7);
+    ph.m.lookAt(camera.position); ph.m.material.opacity = on; ph.m.scale.setScalar(0.8 + 0.2 * on);
+  }
+  const emberOn = win(t, 33.5, 43.8, 1.5, 1.0); embers.material.opacity = emberOn * 0.9; embers.material.color.copy(actCol);
+  if (emberOn > 0) {
+    for (let i = 0; i < emberCount; i++) { const s = emberSeed[i]; const life = frac(t * s.speed + s.phase); const rad = s.rad * (0.6 + life * 0.8); emberPos[i * 3] = Math.sin(s.az + life * 2 + Math.sin(t + s.wob) * 0.3) * rad; emberPos[i * 3 + 1] = brain.position.y - 0.8 + life * 6.5; emberPos[i * 3 + 2] = Math.cos(s.az + life * 2) * rad; }
+    emberGeo.attributes.position.needsUpdate = true;
+  }
+  let flash = 0;
+  for (let i = 0; i < bolts.length; i++) {
+    const b = bolts[i]; const cycle = (t + b.phase * b.period) / b.period; const f = frac(cycle); const show = midnight > 0.05 && f < 0.14;
+    b.line.visible = b.sheath.visible = b.spark.visible = show; if (!show) continue;
+    buildBolt(b, 7000 + i * 97 + Math.floor(cycle) * 13);
+    const o = (1 - f / 0.14) * midnight; b.line.material.opacity = o; b.sheath.material.opacity = o * 0.35; b.spark.material.opacity = o * 0.9; flash = Math.max(flash, 1 - f / 0.14);
+  }
+  hemi.intensity += flash * midnight * 0.9;
+  if (flash > 0) { skyMat.uniforms.mid.value.lerp(tmpC.set('#8a7ab8'), flash * midnight * 0.45); skyMat.uniforms.top.value.lerp(tmpC.set('#3a3a6a'), flash * midnight * 0.35); }
+
+  const shake = midnight * 0.05 * (0.4 + 0.6 * strobe);
+  camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.25 + Math.sin(t * 23) * shake, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.12 + Math.cos(t * 29) * shake, kf(t, CAM.z));
+  camera.lookAt(0, kf(t, CAM.ty), 0);
+  renderer.render(scene, camera);
+  overlay.update(t); updateHud(t);
+  return true;
+};
+window.renderAt(0);
+window.__sceneReady = true;
+</script>
+</body>
+</html>

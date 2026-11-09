@@ -1,0 +1,16 @@
+{
+  "title": "What if you woke up 100 years in the future?",
+  "output": "what_if_woke_up_100_years_future_9x16.mp4",
+  "poster_time": 20,
+  "voice": "mb-en1",
+  "speed": 135,
+  "lines": [
+    {"id": 1, "start": 0.8,  "text": "What if you woke up one hundred years in the future?"},
+    {"id": 2, "start": 6.0,  "text": "You fall asleep tonight, and open your eyes in twenty-one twenty-six. The bed is the same. The world outside is not."},
+    {"id": 3, "start": 15.0, "text": "By morning, you notice nobody drives. Cars glide through quiet lanes in the sky, and the air is clean."},
+    {"id": 4, "start": 24.0, "text": "By noon, your phone is a museum piece. People talk to the air, and screens appear wherever they look."},
+    {"id": 5, "start": 33.0, "text": "By sunset, the shock sets in. Your money is worthless, your skills are a century old, and everyone you knew is gone."},
+    {"id": 6, "start": 43.5, "text": "But medicine had a hundred years too. Aging is now a treatable condition. You might live to see twenty-two twenty-six."},
+    {"id": 7, "start": 52.5, "text": "So, what would you do first? Learn the new world, or go back to sleep?"}
+  ]
+}

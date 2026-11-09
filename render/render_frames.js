@@ -2,9 +2,9 @@
 /**
  * Renders render/scene.html to PNG frames with headless Chromium (SwiftShader WebGL).
  *
- *   node render/render_frames.js                 # full render: 60 s @ 30 fps -> render/frames/
- *   node render/render_frames.js --preview 0,3,8 # one PNG per listed second -> render/preview/
- *   node render/render_frames.js --workers 4 --fps 30 --duration 60
+ *   node render/render_frames.js --video brain_100_percent                 # 60 s @ 30 fps -> build/<video>/frames/
+ *   node render/render_frames.js --video brain_100_percent --preview 0,3,8 # one PNG per listed second -> build/<video>/preview/
+ *   node render/render_frames.js --video <slug> --workers 4 --fps 30 --duration 60
  *
  * Every frame is a pure function of time, so frames are split round-robin across workers.
  */
@@ -19,8 +19,11 @@ const FPS = Number(opt('fps', 30));
 const DURATION = Number(opt('duration', 60));
 const WORKERS = Number(opt('workers', 4));
 const PREVIEW = opt('preview', null);
-const ROOT = path.resolve(__dirname);
-const CAPTIONS = JSON.parse(fs.readFileSync(path.join(ROOT, '..', 'audio', 'build', 'timings.json'), 'utf8'));
+const VIDEO = opt('video', null);
+if (!VIDEO) { console.error('usage: render_frames.js --video <slug> [--preview s,s,...] [--workers N] [--fps N] [--duration S]'); process.exit(2); }
+const ROOT = path.resolve(__dirname, '..');                       // repo root is served
+const BUILD = path.join(ROOT, 'build', VIDEO);
+const CAPTIONS = JSON.parse(fs.readFileSync(path.join(BUILD, 'audio', 'timings.json'), 'utf8'));
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png' };
 function serve() {
@@ -39,7 +42,7 @@ async function openPage(browser, port) {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
   page.on('pageerror', e => console.error('[page error]', e.message));
   page.on('console', m => { if (m.type() === 'error') console.error('[console]', m.text()); });
-  await page.goto(`http://127.0.0.1:${port}/scene.html`);
+  await page.goto(`http://127.0.0.1:${port}/videos/${VIDEO}/scene.html`);
   await page.waitForFunction(() => window.__sceneReady === true, null, { timeout: 60000 });
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(c => window.setCaptions(c), CAPTIONS);
@@ -57,7 +60,7 @@ async function renderFrame(page, t, file) {
   const launch = () => chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-vsync'] });
 
   if (PREVIEW !== null) {
-    const outDir = path.join(ROOT, 'preview'); fs.mkdirSync(outDir, { recursive: true });
+    const outDir = path.join(BUILD, 'preview'); fs.mkdirSync(outDir, { recursive: true });
     const browser = await launch(); const page = await openPage(browser, port);
     for (const s of PREVIEW.split(',').map(Number)) {
       const t0 = Date.now(); await renderFrame(page, s, path.join(outDir, `t${String(s).replace('.', '_')}.png`));
@@ -67,7 +70,7 @@ async function renderFrame(page, t, file) {
   }
 
   const total = Math.round(FPS * DURATION);
-  const outDir = path.join(ROOT, 'frames'); fs.mkdirSync(outDir, { recursive: true });
+  const outDir = path.join(BUILD, 'frames'); fs.mkdirSync(outDir, { recursive: true });
   const t0 = Date.now(); let done = 0;
   await Promise.all(Array.from({ length: WORKERS }, async (_, w) => {
     const browser = await launch(); const page = await openPage(browser, port);

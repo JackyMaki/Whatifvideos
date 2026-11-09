@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Synthesize the narration lines with espeak-ng + MBROLA and place them on a 60 s timeline."""
+"""Synthesize the narration lines with espeak-ng + MBROLA and place them on a 60 s timeline.
+
+usage: make_narration.py <video-slug>   (reads videos/<slug>/narration.json, writes build/<slug>/audio/)
+"""
 import json, subprocess, sys, wave, os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "audio" / "build"
+VIDEO = sys.argv[1]
+OUT = ROOT / "build" / VIDEO / "audio"
 OUT.mkdir(parents=True, exist_ok=True)
-spec = json.load(open(ROOT / "script" / "narration.json"))
+spec = json.load(open(ROOT / "videos" / VIDEO / "narration.json"))
 voice, speed = spec["voice"], spec["speed"]
 TOTAL = 60.0
 
