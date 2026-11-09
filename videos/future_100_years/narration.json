@@ -41,6 +41,7 @@
     }
   ],
   "engine": "kokoro",
-  "speed_factor": 1.0,
-  "lang": "en-us"
+  "speed_factor": 0.92,
+  "lang": "en-us",
+  "whisper": 0.55
 }

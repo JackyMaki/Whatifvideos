@@ -4,6 +4,7 @@
 usage: make_narration.py <video-slug>   (reads videos/<slug>/narration.json, writes build/<slug>/audio/)
 """
 import json, subprocess, sys, wave, os
+import numpy as np
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,6 +43,9 @@ def synth(text, raw):
             sys.exit(f"missing Kokoro model files in {VOICES}; run audio/get_voices.sh")
         _kokoro = _kokoro or Kokoro(str(model), str(vb))
         audio, sr = _kokoro.create(text, voice=voice, speed=spec.get("speed_factor", 1.0), lang=spec.get("lang", "en-us"))
+        if spec.get("whisper", 0) > 0:
+            sys.path.insert(0, str(ROOT / "audio")); from whisper import loud_whisper
+            audio = loud_whisper(np.asarray(audio, dtype=np.float64), sr, spec["whisper"])
         sf.write(str(raw), audio, sr)
     elif engine == "piper":
         model = VOICES / f"{voice}.onnx"
@@ -68,7 +72,7 @@ for i, line in enumerate(spec["lines"]):
     clean = OUT / f"line{line['id']}.wav"
     pitch = spec.get("pitch", 1.0)  # <1 = deeper, calmer; duration is kept
     shift = f"asetrate=22050*{pitch},aresample=22050,atempo={1/pitch:.4f}," if engine == "piper" and pitch != 1.0 else ""
-    eq = ("highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=220," if engine == "kokoro" else
+    eq = ("highpass=f=70,acompressor=threshold=-24dB:ratio=3:attack=12:release=200," if engine == "kokoro" else
           shift + "highpass=f=80,lowpass=f=8500,acompressor=threshold=-20dB:ratio=3:attack=15:release=220," if engine == "piper" else
           "highpass=f=90,lowpass=f=9000,equalizer=f=2800:t=q:w=1.2:g=-2,acompressor=threshold=-18dB:ratio=3:attack=10:release=120,")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),

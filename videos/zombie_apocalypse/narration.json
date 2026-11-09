@@ -13,34 +13,35 @@
     {
       "id": 2,
       "start": 6.0,
-      "text": "It starts at sunrise. One bite in a crowded city. By the time the news catches up, the infected have doubled, and doubled again."
+      "text": "It starts on an ordinary morning. You step outside, coffee in hand. Across the street, someone bites a stranger. Then the infected double, and double again."
     },
     {
       "id": 3,
       "start": 15.0,
-      "text": "By morning, the roads are jammed. Nobody leaves the city by car, and the sidewalks are the most dangerous place on Earth."
+      "text": "By mid-morning the roads are jammed, and the sidewalks are worse. You don't run far. You run up. Your own fire escape is the safest road left."
     },
     {
       "id": 4,
       "start": 24.0,
-      "text": "By noon, the power grid fails. No phones, no water, no help coming. Your best weapon is a locked door."
+      "text": "By noon, the power grid fails. No phones, no water, no help coming. You drag everything you can find in front of the rooftop door."
     },
     {
       "id": 5,
       "start": 33.0,
-      "text": "By sunset, the city is theirs. Nine in ten people are gone. The survivors are the ones who stayed quiet, and stayed high."
+      "text": "By sunset, the city is theirs. Nine in ten people are gone. The ones who made it stayed quiet, and stayed high."
     },
     {
       "id": 6,
       "start": 43.5,
-      "text": "But at night, the real enemy isn't the dead. It's hunger, thirst, and other survivors. Most groups fall apart in the first week."
+      "text": "At night, the real danger isn't the dead. It's hunger, thirst, and the people beside you. Before dawn, one of your neighbors slips away."
     },
     {
       "id": 7,
       "start": 52.5,
-      "text": "So, where would you go first? The rooftop, or the supermarket?"
+      "text": "So, when the food runs out, where do you go? The rooftop, or the supermarket?"
     }
   ],
-  "speed_factor": 1.0,
-  "lang": "en-us"
+  "speed_factor": 0.95,
+  "lang": "en-us",
+  "whisper": 0.55
 }
