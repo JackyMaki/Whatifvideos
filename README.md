@@ -9,7 +9,7 @@ tweaked by editing a few files, and a new episode is a new folder under `videos/
 | Slug | Video | Poster | Notes |
 |------|-------|--------|-------|
 | `brain_100_percent` | `output/brain_100_percent/what_if_100_percent_brain_9x16.mp4` | `output/brain_100_percent/poster.jpg` | A floating brain lights up as the day passes: learning, recall, hunger, a midnight storm, calm. |
-| `future_100_years` | `output/future_100_years/what_if_woke_up_100_years_future_9x16.mp4` | `output/future_100_years/poster.jpg` | A sleeper wakes in 2126: the town sinks, a skyline rises, flying cars, holo screens, worthless coins, a DNA helix, back to sleep. |
+| `future_100_years` | `output/future_100_years/what_if_woke_up_100_years_future_9x16.mp4` | `output/future_100_years/poster.jpg` | A sleeper wakes in a city plaza in 2126: buildings grow and light up, cars lift into sky lanes, holo screens, worthless coins, a DNA helix, back to sleep. |
 
 Every episode is 1080×1920 (9:16), exactly 60 s at 30 fps, H.264 + AAC, loudness-normalised to
 −14 LUFS. Each `output/<slug>/description.md` has the post text, full narration transcript and a
@@ -34,6 +34,14 @@ build.sh                    runs the whole pipeline for one episode
 
 Every frame is a pure function of time `t`, so frames render in any order across workers and a
 re-render of a single second is just `--preview`.
+
+## House style
+
+* The question stays on screen in EB Garamond (vendored in `render/fonts/`, SIL OFL) with the key
+  phrase in red; narration lines appear as bare serif captions low in the frame, no boxes.
+* A minimal stat block sits top-left: small tracked label, big serif value, small sub-line (the clock).
+* Scenes are blocky low-poly, shot at eye level where the story allows, with soft shadows and
+  distance haze (`createWorld({ shadows: true, fog })`), and one continuous sunrise-to-night cycle.
 
 ## Rebuild
 

@@ -4,22 +4,17 @@
 <meta charset="utf-8">
 <title>What if you used 100% of your brain — low poly scene</title>
 <style>
-  #title .big { background-image: linear-gradient(180deg, #fff6d6 0%, #ffd166 45%, #ff8a3d 100%); filter: drop-shadow(0 12px 40px rgba(255, 140, 60, .45)); }
-  #meterLabel { font-size: 30px; font-weight: 600; letter-spacing: 0.22em; opacity: .92; text-shadow: 0 4px 16px rgba(0,0,0,.5); }
-  #meterRow { display: flex; align-items: center; gap: 24px; margin-top: 16px; }
-  #meterBar { flex: 1; height: 22px; border-radius: 11px; background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(255,255,255,.22), 0 6px 24px rgba(0,0,0,.35); overflow: hidden; }
-  #meterFill { height: 100%; width: 10%; border-radius: 11px; background: linear-gradient(90deg, #3ee0ff, #7cf5ff); box-shadow: 0 0 24px #3ee0ff; }
-  #meterPct { font-size: 56px; font-weight: 800; min-width: 170px; text-align: right; font-variant-numeric: tabular-nums; text-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  #meterBar { width: 300px; height: 6px; margin-top: 14px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; }
+  #meterFill { height: 100%; width: 10%; border-radius: 3px; background: #7cf5ff; box-shadow: 0 0 14px #7cf5ff; }
 </style>
 </head>
 <body>
 <canvas id="c" width="1080" height="1920"></canvas>
 <div id="ui">
-  <div id="title" class="abs"><div class="l1">WHAT IF YOU USED</div><div class="big">100%</div><div class="l2">OF YOUR BRAIN?</div></div>
-  <div id="hud" class="abs"><div id="meterLabel">BRAIN IN USE</div><div id="meterRow"><div id="meterBar"><div id="meterFill"></div></div><div id="meterPct">10%</div></div></div>
-  <div id="clock" class="abs"><span id="clockTime">06:00 · SUNRISE</span></div>
+  <div id="title" class="abs">What if you used <em>100%</em> of your brain?</div>
+  <div id="hud" class="abs"><div id="hudLabel" class="label">Brain in use</div><div id="hudValue">10%</div><div id="hudSub" class="label">06:00 · Sunrise</div><div id="meterBar"><div id="meterFill"></div></div></div>
   <div id="cap" class="abs"><div id="capInner"></div></div>
-  <div id="footer" class="abs">A LOW POLY WHAT‑IF</div>
+  <div id="footer" class="abs">A what‑if, every day</div>
 </div>
 
 <script type="module">
@@ -144,16 +139,16 @@ const CAM = {
   ty: [[0, 7.0], [6, 6.0], [24, 6.0], [33, 5.6], [43.5, 6.2], [52.5, 6.6], [60, 7.6]],
 };
 const overlay = createOverlay({ highlight: /(one hundred percent|ten percent|myth|new language|entire library|perfect recall|a fifth of your energy|around the clock|every neuron fires at once|seizure|all of your brain|never all at once)/gi });
-const hud = { fill: document.getElementById('meterFill'), pct: document.getElementById('meterPct'), label: document.getElementById('meterLabel') };
+const hud = { fill: document.getElementById('meterFill'), pct: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
 function updateHud(t) {
   const p = brainPower(t);
   const shown = t >= 43.5 && t < 52.5 ? 100 : Math.round(p * 100);
   hud.fill.style.width = `${shown}%`; hud.pct.textContent = `${shown}%`;
   const act = kfColor(t, ACT_COLOR).getStyle();
-  hud.fill.style.background = `linear-gradient(90deg, ${act}, #ffffff)`; hud.fill.style.boxShadow = `0 0 24px ${act}`;
-  if (t >= 43.5 && t < 52.5) { const s = 0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.6); hud.label.textContent = 'BRAIN IN USE · ALL AT ONCE'; hud.pct.style.color = `rgb(255, ${Math.round(255 - 150 * s)}, ${Math.round(255 - 150 * s)})`; }
-  else if (t >= 52.5) { hud.label.textContent = 'BRAIN IN USE · OVER A WHOLE DAY'; hud.pct.style.color = '#fff'; }
-  else { hud.label.textContent = 'BRAIN IN USE'; hud.pct.style.color = '#fff'; }
+  hud.fill.style.background = act; hud.fill.style.boxShadow = `0 0 14px ${act}`;
+  if (t >= 43.5 && t < 52.5) { const s = 0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.6); hud.label.textContent = 'Brain in use · all at once'; hud.pct.style.color = `rgb(255, ${Math.round(255 - 150 * s)}, ${Math.round(255 - 150 * s)})`; }
+  else if (t >= 52.5) { hud.label.textContent = 'Brain in use · over a whole day'; hud.pct.style.color = '#fff'; }
+  else { hud.label.textContent = 'Brain in use'; hud.pct.style.color = '#fff'; }
 }
 
 // ---------------------------------------------------------------------------

@@ -83,13 +83,15 @@ export function clockFor(t) {
 // ---------------------------------------------------------------------------
 // World
 // ---------------------------------------------------------------------------
-export function createWorld({ seed = 1337, canvas, flatRadius = 2.5, treeKeepOut = (x, z) => Math.hypot(x, z) < 7 || (Math.abs(x) < 4 && z > -20), mountains = true, trees = 70, clouds = 9, horizonRise = 0.12 } = {}) {
+export function createWorld({ seed = 1337, canvas, flatRadius = 2.5, treeKeepOut = (x, z) => Math.hypot(x, z) < 7 || (Math.abs(x) < 4 && z > -20), mountains = true, trees = 70, clouds = 9, horizonRise = 0.12, ground = 'valley', shadows = false, shadowExtent = 30, fog = 0 } = {}) {
   const rng = mulberry32(seed); const R = (a = 0, b = 1) => a + (b - a) * rng();
   const W = 1080, H = 1920;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(1); renderer.setSize(W, H, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  if (shadows) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
   const scene = new THREE.Scene();
+  if (fog > 0) scene.fog = new THREE.FogExp2(0xc8d8e8, fog);
   const camera = new THREE.PerspectiveCamera(55, W / H, 0.1, 500);
 
   // sky quad
@@ -106,19 +108,20 @@ export function createWorld({ seed = 1337, canvas, flatRadius = 2.5, treeKeepOut
   const starCount = 1400, starPos = new Float32Array(starCount * 3);
   for (let i = 0; i < starCount; i++) { const az = R(-Math.PI, Math.PI), el = Math.asin(R(0.02, 1)), r = 300; starPos[i * 3] = r * Math.cos(el) * Math.sin(az); starPos[i * 3 + 1] = r * Math.sin(el) + 10; starPos[i * 3 + 2] = -r * Math.cos(el) * Math.cos(az); R(0, 6.28); /* keeps the series' random layout stable */ }
   const starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 3.8, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false });
+  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 3.8, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false });
   const stars = new THREE.Points(starGeo, starMat); scene.add(stars);
 
   // lights
   const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x3a5a2a, 0.8); scene.add(hemi);
   const sunLight = new THREE.DirectionalLight(0xffffff, 2.0); sunLight.position.set(-30, 20, -10); scene.add(sunLight);
+  if (shadows) { sunLight.castShadow = true; sunLight.shadow.mapSize.set(2048, 2048); const sc = sunLight.shadow.camera; sc.left = -shadowExtent; sc.right = shadowExtent; sc.top = shadowExtent; sc.bottom = -shadowExtent; sc.near = 1; sc.far = 220; sunLight.shadow.bias = -0.0006; sunLight.shadow.normalBias = 0.02; sunLight.shadow.radius = 3; }
 
   // sun & moon
-  const sun = new THREE.Mesh(new THREE.IcosahedronGeometry(7, 1), new THREE.MeshBasicMaterial({ color: 0xffe08a, toneMapped: false }));
-  const sunHalo = new THREE.Mesh(new THREE.IcosahedronGeometry(12, 1), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  const sun = new THREE.Mesh(new THREE.IcosahedronGeometry(7, 1), new THREE.MeshBasicMaterial({ color: 0xffe08a, toneMapped: false, fog: false }));
+  const sunHalo = new THREE.Mesh(new THREE.IcosahedronGeometry(12, 1), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
   sun.add(sunHalo); scene.add(sun);
-  const moon = new THREE.Mesh(new THREE.IcosahedronGeometry(5, 1), new THREE.MeshLambertMaterial({ color: 0xdfe7ff, emissive: 0x8ea4d6, emissiveIntensity: 0.6, flatShading: true }));
-  const moonHalo = new THREE.Mesh(new THREE.IcosahedronGeometry(9, 1), new THREE.MeshBasicMaterial({ color: 0x9fb4ff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const moon = new THREE.Mesh(new THREE.IcosahedronGeometry(5, 1), new THREE.MeshLambertMaterial({ color: 0xdfe7ff, emissive: 0x8ea4d6, emissiveIntensity: 0.6, flatShading: true, fog: false }));
+  const moonHalo = new THREE.Mesh(new THREE.IcosahedronGeometry(9, 1), new THREE.MeshBasicMaterial({ color: 0x9fb4ff, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
   moon.add(moonHalo); scene.add(moon);
 
   // terrain
@@ -130,7 +133,7 @@ export function createWorld({ seed = 1337, canvas, flatRadius = 2.5, treeKeepOut
     h += Math.max(0, d - 22) * horizonRise;
     return h - 0.6;
   }
-  {
+  if (ground === 'valley') {
     const g = new THREE.PlaneGeometry(140, 140, 56, 56).toNonIndexed(); g.rotateX(-Math.PI / 2);
     const p = g.attributes.position; const col = new Float32Array(p.count * 3); const c = new THREE.Color();
     for (let i = 0; i < p.count; i++) p.setY(i, terrainH(p.getX(i), p.getZ(i)));
@@ -140,12 +143,12 @@ export function createWorld({ seed = 1337, canvas, flatRadius = 2.5, treeKeepOut
       for (let k = 0; k < 3; k++) { col[(f + k) * 3] = c.r; col[(f + k) * 3 + 1] = c.g; col[(f + k) * 3 + 2] = c.b; }
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals();
-    scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
+    const terrain = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })); terrain.receiveShadow = shadows; scene.add(terrain);
   }
   // mountains
   const rockMat = new THREE.MeshLambertMaterial({ color: 0x6f7aa0, flatShading: true });
   const snowMat = new THREE.MeshLambertMaterial({ color: 0xf1f5ff, flatShading: true });
-  if (mountains) for (let i = 0; i < 26; i++) {
+  if (mountains && ground === 'valley') for (let i = 0; i < 26; i++) {
     const az = R(-Math.PI * 0.95, Math.PI * 0.95); if (Math.abs(az) > Math.PI * 0.72 && rng() < 0.5) continue;
     const dist = R(48, 70), h = R(10, 26), r = h * R(0.55, 0.9);
     const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, Math.floor(R(5, 8)), 1), rockMat);
@@ -155,7 +158,7 @@ export function createWorld({ seed = 1337, canvas, flatRadius = 2.5, treeKeepOut
   // trees
   const trunkMat = new THREE.MeshLambertMaterial({ color: 0x7a4a2b, flatShading: true });
   const leafMats = ['#2f8f4e', '#3fa35b', '#6bb04a', '#2c7a5a', '#8bbf4a'].map(c => new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
-  for (let i = 0; i < trees; i++) {
+  for (let i = 0; i < (ground === 'valley' ? trees : 0); i++) {
     const x = R(-45, 45), z = R(-45, 12); if (treeKeepOut(x, z)) continue;
     const s = R(0.8, 1.7); const g = new THREE.Group(); g.position.set(x, terrainH(x, z) - 0.1, z); g.scale.setScalar(s);
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 5), trunkMat); trunk.position.y = 0.6; g.add(trunk);
@@ -191,53 +194,65 @@ export function createWorld({ seed = 1337, canvas, flatRadius = 2.5, treeKeepOut
     sunLight.color.copy(kfColor(t, D.lightColor)); sunLight.intensity = lerp(0.55, 2.4, dayI) * (1 - nt * 0.75);
     hemi.color.copy(kfColor(t, D.hemiSky)); hemi.groundColor.copy(kfColor(t, D.hemiGround)); hemi.intensity = lerp(1.0, 0.55, nt);
     renderer.toneMappingExposure = lerp(1.08, 0.9, nt);
+    if (scene.fog) scene.fog.color.copy(skyMat.uniforms.bot.value).lerp(skyMat.uniforms.mid.value, 0.35);
     cloudMat.color.copy(kfColor(t, D.cloudColor));
     const drop = opts.cloudDrop || 0, cs = opts.cloudScale || 1;
     cloudList.forEach(c => { const u = c.userData; c.position.set(((u.x + t * u.speed + 60) % 120) - 60, u.y - drop, u.z); c.scale.setScalar(u.s * cs); });
     return { nt, se, dayI };
   }
 
-  return { rng, R, renderer, scene, camera, skyMat, stars, starMat, hemi, sunLight, sun, sunHalo, moon, moonHalo, cloudMat, clouds: cloudList, terrainH, rockMat, snowMat, trunkMat, leafMats, updateEnvironment };
+  return { rng, R, renderer, scene, camera, skyMat, stars, starMat, hemi, sunLight, sun, sunHalo, moon, moonHalo, cloudMat, clouds: cloudList, terrainH, rockMat, snowMat, trunkMat, leafMats, updateEnvironment, shadows };
 }
 
 // ---------------------------------------------------------------------------
 // Overlay: title card, captions, clock, footer.  Per-video code handles its own HUD.
 // ---------------------------------------------------------------------------
-export function createOverlay({ highlight = /$^/, titleEnd = 5.6, skipCaptionIds = [1], lastCaptionHold = 60.5 } = {}) {
+/**
+ * Overlay in the series' house style: the question stays on screen in a classic serif with one
+ * phrase in red (#title, big for the opening seconds, then smaller and higher), narration lines
+ * appear as bare serif captions lower in the frame (#cap), and a minimal stat block sits top-left
+ * (#hud with #hudLabel / #hudValue / #hudSub; the sub line shows the clock unless the video sets it).
+ */
+export function createOverlay({ highlight = /$^/, titleEnd = 5.6, skipCaptionIds = [1], lastCaptionHold = 60.5, hudFrom = null } = {}) {
   let CAPTIONS = [];
   const el = id => document.getElementById(id);
-  const ui = { title: el('title'), clock: el('clock'), clockTime: el('clockTime'), cap: el('cap'), capInner: el('capInner'), footer: el('footer'), hud: el('hud') };
+  const ui = { title: el('title'), cap: el('cap'), capInner: el('capInner'), footer: el('footer'), hud: el('hud'), hudSub: el('hudSub') };
   window.setCaptions = lines => { CAPTIONS = lines; };
   function update(t) {
-    if (ui.title) { ui.title.style.opacity = win(t, 0.25, titleEnd, 0.8, 0.7); ui.title.style.transform = `translateY(${(1 - smooth((t - 0.25) / 1.2)) * 40}px) scale(${lerp(0.96, 1.0, smooth((t - 0.25) / 1.2))})`; }
-    const hudOn = win(t, titleEnd, 60.5, 0.8, 0.1);
+    if (ui.title) {
+      const inU = smooth((t - 0.25) / 1.1); const shrink = smooth((t - titleEnd) / 1.4);
+      ui.title.style.opacity = inU * (t > 59.4 ? smooth((60.5 - t) / 1.1) : 1);
+      ui.title.style.transform = `translateY(${(1 - inU) * 30 - shrink * 150}px) scale(${lerp(lerp(0.97, 1, inU), 0.72, shrink)})`;
+    }
+    const hudOn = win(t, hudFrom == null ? titleEnd : hudFrom, 60.5, 0.8, 0.1);
     if (ui.hud) ui.hud.style.opacity = hudOn;
-    if (ui.clock) { ui.clock.style.opacity = hudOn; ui.clockTime.textContent = clockFor(t); }
+    if (ui.hudSub && !ui.hudSub.dataset.custom) ui.hudSub.textContent = clockFor(t);
     let capOp = 0, capText = '';
     const last = CAPTIONS.length ? CAPTIONS[CAPTIONS.length - 1].id : -1;
     for (const c of CAPTIONS) { if (skipCaptionIds.includes(c.id)) continue; const end = c.id === last ? lastCaptionHold : c.end + 0.55; const o = win(t, c.start - 0.25, end, 0.35, 0.45); if (o > capOp) { capOp = o; capText = c.text; } }
     ui.cap.style.opacity = capOp; if (capText !== ui.cap.dataset.text) { ui.cap.dataset.text = capText; ui.capInner.innerHTML = capText.replace(highlight, '<em>$1</em>'); }
-    ui.cap.style.transform = `translateY(${(1 - capOp) * 18}px)`;
-    if (ui.footer) ui.footer.style.opacity = win(t, 57.2, 60.5, 0.8, 0.1) * 0.8;
+    ui.cap.style.transform = `translateY(${(1 - capOp) * 14}px)`;
+    if (ui.footer) ui.footer.style.opacity = win(t, 57.2, 60.5, 0.8, 0.1) * 0.7;
     return hudOn;
   }
   return { ui, update };
 }
 
 export const BASE_CSS = `
+  @font-face { font-family: "EB Garamond"; font-style: normal; font-weight: 400 800; src: url("../../render/fonts/EBGaramond-latin.woff2") format("woff2"); }
+  @font-face { font-family: "EB Garamond"; font-style: italic; font-weight: 400 800; src: url("../../render/fonts/EBGaramond-italic-latin.woff2") format("woff2"); }
   html, body { margin: 0; padding: 0; width: 1080px; height: 1920px; overflow: hidden; background: #000; }
   #c { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; display: block; }
-  #ui { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; pointer-events: none; font-family: "Inter", "Inter Display", "IPAPGothic", sans-serif; color: #fff; }
+  #ui { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; pointer-events: none; color: #fff; font-family: "EB Garamond", "Liberation Serif", serif; }
   .abs { position: absolute; }
-  #title { left: 0; right: 0; top: 300px; text-align: center; opacity: 0; }
-  #title .l1, #title .l2 { font-size: 64px; font-weight: 700; letter-spacing: 0.14em; text-shadow: 0 6px 30px rgba(0,0,0,.45); }
-  #title .big { font-size: 300px; font-weight: 900; line-height: 0.95; letter-spacing: -0.02em; margin: 18px 0 10px; -webkit-background-clip: text; background-clip: text; color: transparent; }
-  #hud { left: 60px; right: 60px; top: 120px; opacity: 0; }
-  #clock { left: 0; right: 0; top: 232px; text-align: center; opacity: 0; }
-  #clockTime { display: inline-block; font-size: 34px; font-weight: 700; letter-spacing: .18em; padding: 12px 28px; border-radius: 999px; background: rgba(0,0,0,.32); box-shadow: inset 0 0 0 2px rgba(255,255,255,.22); font-variant-numeric: tabular-nums; }
-  #cap { left: 70px; right: 70px; top: 1330px; text-align: center; opacity: 0; }
-  #capInner { display: inline-block; font-size: 54px; line-height: 1.28; font-weight: 600; padding: 26px 40px; border-radius: 28px; background: rgba(8, 10, 24, .55); box-shadow: 0 10px 40px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.12); text-shadow: 0 3px 12px rgba(0,0,0,.6); max-width: 900px; }
-  #capInner em { font-style: normal; color: #ffd166; }
-  #footer { left: 0; right: 0; bottom: 110px; text-align: center; font-size: 28px; letter-spacing: .26em; font-weight: 600; opacity: 0; text-shadow: 0 4px 16px rgba(0,0,0,.6); }
+  .label { font-family: "Inter", sans-serif; font-weight: 500; font-size: 26px; letter-spacing: .26em; text-transform: uppercase; opacity: .88; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  #title { left: 70px; right: 70px; top: 660px; text-align: center; opacity: 0; transform-origin: 50% 0; font-size: 104px; line-height: 1.12; font-weight: 500; letter-spacing: -0.005em; text-shadow: 0 4px 18px rgba(0,0,0,.55), 0 0 60px rgba(0,0,0,.25); }
+  #title em { font-style: normal; color: #ff3b2f; text-shadow: 0 0 24px rgba(255,59,47,.55), 0 4px 18px rgba(0,0,0,.5); }
+  #hud { left: 64px; top: 250px; opacity: 0; text-align: left; }
+  #hudValue { font-size: 118px; line-height: 1.0; font-weight: 400; margin: 10px 0 10px -4px; font-variant-numeric: tabular-nums; text-shadow: 0 4px 18px rgba(0,0,0,.6); }
+  #cap { left: 80px; right: 80px; top: 1500px; text-align: center; opacity: 0; font-size: 56px; line-height: 1.3; font-weight: 500; text-shadow: 0 3px 14px rgba(0,0,0,.75), 0 0 40px rgba(0,0,0,.35); }
+  #capInner { display: inline-block; max-width: 920px; }
+  #capInner em { font-style: italic; color: #ffe3b3; }
+  #footer { left: 0; right: 0; bottom: 120px; text-align: center; opacity: 0; font-family: "Inter", sans-serif; font-weight: 500; font-size: 24px; letter-spacing: .3em; text-transform: uppercase; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
 `;
 export function injectBaseCss() { const s = document.createElement('style'); s.textContent = BASE_CSS; document.head.prepend(s); }

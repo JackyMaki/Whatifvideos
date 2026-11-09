@@ -1,0 +1,8 @@
+EB Garamond (EBGaramond-latin.woff2, EBGaramond-italic-latin.woff2)
+Copyright 2017 The EB Garamond Project Authors (https://github.com/octaviopardo/EBGaramond12)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is available with a FAQ at: https://openfontlicense.org
+
+The files here are the Latin subsets served by Google Fonts, vendored so the renderer
+works offline. They are used only to render text inside the generated videos.

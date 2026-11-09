@@ -27,13 +27,13 @@ would you do first?
 
 | Time | Time of day | What you see |
 |------|-------------|--------------|
-| 0:00–0:06 | Sunrise | Title card. A sleeper in a bed on a hilltop, "z"s drifting up, a small 2026 town with red roofs and a water tower behind. The HUD reads YEAR 2026. |
-| 0:06–0:15 | Morning | At 0:12 the sleeper sits up. The year counter rolls from 2026 to 2126 while the old houses sink into the ground and a glowing skyline rises in their place. |
-| 0:15–0:24 | Mid-morning | Flying cars with light trails cross the sky in lanes, hovering platforms drift above the city, the sun climbs. |
-| 0:24–0:33 | Noon | Four holographic panels (news, weather, translator, health) pop up around the sleeper. An old smartphone labelled MUSEUM PIECE floats, then drops away. |
-| 0:33–0:43 | Sunset | Orange sky. Gold coins rain down, turn grey and vanish. Family photographs drift up and fade. The sleeper slumps forward. A slow heartbeat and a lonely bell enter the music. |
-| 0:43–0:52 | Midnight | A glowing DNA helix rotates above the bed with healing particles rising; the city windows are lit. A "2226?" tag appears above. |
-| 0:52–1:00 | Night | The sleeper lies back down, "z"s return, shooting stars cross the sky over the night skyline. The HUD reads "YEAR · 100 YEARS LATER". |
+| 0:00–0:06 | Sunrise | The question in serif over a city plaza at eye level. A sleeper in a bed in the middle of the square, "z"s drifting up, blocky pedestrians, cars on the road behind. YEAR 2026 top-left. |
+| 0:06–0:15 | Morning | At 0:12 the sleeper sits up. The year rolls 2026 → 2126: every building stretches taller and gains glowing edge trims, the cars lift off the road into sky lanes with light trails. |
+| 0:15–0:24 | Mid-morning | Flying cars cross above the street, people walk the sidewalks, a few passers-by read small floating screens. |
+| 0:24–0:33 | Noon | Four holographic panels (news, weather, translator, health) pop up around the sleeper. An old smartphone labelled "museum piece" floats, then drops away. |
+| 0:33–0:43 | Sunset | Orange haze over the city. Gold coins rain down, turn grey and vanish. Family photographs drift up and fade. The sleeper slumps forward. A slow heartbeat and a lonely bell enter the music. |
+| 0:43–0:52 | Midnight | Windows lit across the city. A glowing DNA helix rotates above the bed with healing particles; a "2226?" tag appears. |
+| 0:52–1:00 | Night | The sleeper lies back down, "z"s return, shooting stars cross the sky over the lit skyline. The stat block reads "Year · 100 years later". |
 
 ## Hashtags
 
