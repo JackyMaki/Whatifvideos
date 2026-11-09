@@ -2,8 +2,7 @@
   "title": "What if you used 100% of your brain?",
   "output": "what_if_100_percent_brain_9x16.mp4",
   "poster_time": 38,
-  "voice": "mb-en1",
-  "speed": 135,
+  "voice": "en-us-ryan-high",
   "lines": [
     {
       "id": 1,
@@ -40,5 +39,7 @@
       "start": 52.5,
       "text": "The truth? You already use all of your brain. Just never all at once."
     }
-  ]
+  ],
+  "engine": "piper",
+  "length_scale": 1.1
 }

@@ -5,3 +5,4 @@
 - Videos follow the house style in README.md (serif question with a red key phrase, top-left stat
   block, street-level blocky low-poly scenes, 9:16, exactly 60 s).
 - Reply in plain words and short sentences.
+- Narration uses the Piper neural voice en-us-ryan-high, not espeak/MBROLA.

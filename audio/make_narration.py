@@ -11,8 +11,22 @@ VIDEO = sys.argv[1]
 OUT = ROOT / "build" / VIDEO / "audio"
 OUT.mkdir(parents=True, exist_ok=True)
 spec = json.load(open(ROOT / "videos" / VIDEO / "narration.json"))
-voice, speed = spec["voice"], spec["speed"]
+voice, speed = spec["voice"], spec.get("speed", 135)
+engine = spec.get("engine", "piper" if voice.startswith("en-us-") or voice.startswith("en_") else "espeak")
+VOICES = ROOT / "audio" / "voices"
 TOTAL = 60.0
+
+def synth(text, raw):
+    """Piper neural voice (audio/voices/<voice>.onnx, see audio/get_voices.sh) or espeak-ng/MBROLA."""
+    if engine == "piper":
+        model = VOICES / f"{voice}.onnx"
+        if not model.exists():
+            sys.exit(f"missing voice model {model}; run audio/get_voices.sh")
+        subprocess.run([sys.executable, "-m", "piper", "-m", str(model), "-c", str(model) + ".json",
+                        "--length-scale", str(spec.get("length_scale", 1.0)), "--sentence-silence", "0.25",
+                        "-f", str(raw), "--", text], check=True, capture_output=True)
+    else:
+        subprocess.run(["espeak-ng", "-v", voice, "-s", str(speed), "-p", "40", "-a", "170", "-w", str(raw), text], check=True)
 
 def dur(path):
     with wave.open(str(path)) as w:
@@ -21,14 +35,13 @@ def dur(path):
 inputs, filters, timings = [], [], []
 for i, line in enumerate(spec["lines"]):
     raw = OUT / f"line{line['id']}_raw.wav"
-    subprocess.run(["espeak-ng", "-v", voice, "-s", str(speed), "-p", "40", "-a", "170",
-                    "-w", str(raw), line["text"]], check=True)
-    # resample to 48k mono, gentle EQ + compression to soften the synthetic edge
+    synth(line["text"], raw)
+    # resample to 48k mono, gentle EQ + compression, loudness-match every line
     clean = OUT / f"line{line['id']}.wav"
+    eq = ("highpass=f=80,acompressor=threshold=-18dB:ratio=2.5:attack=10:release=150," if engine == "piper" else
+          "highpass=f=90,lowpass=f=9000,equalizer=f=2800:t=q:w=1.2:g=-2,acompressor=threshold=-18dB:ratio=3:attack=10:release=120,")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),
-                    "-af", "highpass=f=90,lowpass=f=9000,equalizer=f=2800:t=q:w=1.2:g=-2,"
-                           "acompressor=threshold=-18dB:ratio=3:attack=10:release=120,"
-                           "aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=7",
+                    "-af", eq + "aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=7",
                     "-ac", "1", str(clean)], check=True)
     d = dur(clean)
     timings.append({"id": line["id"], "start": line["start"], "end": round(line["start"] + d, 2),
