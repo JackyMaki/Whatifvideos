@@ -2,7 +2,7 @@
   "title": "What if you woke up 100 years in the future?",
   "output": "what_if_woke_up_100_years_future_9x16.mp4",
   "poster_time": 20,
-  "voice": "en-us-libritts-high",
+  "voice": "am_onyx",
   "lines": [
     {
       "id": 1,
@@ -40,11 +40,7 @@
       "text": "So, what would you do first? Learn the new world, or go back to sleep?"
     }
   ],
-  "engine": "piper",
-  "length_scale": 1.15,
-  "noise_scale": 0.4,
-  "noise_w": 0.6,
-  "pitch": 1.0,
-  "speaker": 6,
-  "flatten": 0.5
+  "engine": "kokoro",
+  "speed_factor": 1.0,
+  "lang": "en-us"
 }

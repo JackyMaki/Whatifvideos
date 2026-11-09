@@ -12,7 +12,7 @@ OUT = ROOT / "build" / VIDEO / "audio"
 OUT.mkdir(parents=True, exist_ok=True)
 spec = json.load(open(ROOT / "videos" / VIDEO / "narration.json"))
 voice, speed = spec["voice"], spec.get("speed", 135)
-engine = spec.get("engine", "piper" if voice.startswith("en-us-") or voice.startswith("en_") else "espeak")
+engine = spec.get("engine", "kokoro" if voice.startswith(("am_", "af_", "bm_", "bf_")) else "piper" if voice.startswith("en") else "espeak")
 VOICES = ROOT / "audio" / "voices"
 TOTAL = 60.0
 
@@ -30,9 +30,20 @@ def flatten_pitch(path, factor):
     call([tier, man], "Replace pitch tier")
     out = call(man, "Get resynthesis (overlap-add)"); out.scale_peak(0.9); out.save(str(path), "WAV")
 
+_kokoro = None
 def synth(text, raw):
-    """Piper neural voice (audio/voices/<voice>.onnx, see audio/get_voices.sh) or espeak-ng/MBROLA."""
-    if engine == "piper":
+    """Kokoro neural voice (default), Piper voice, or espeak-ng/MBROLA. Models live in audio/voices/ (audio/get_voices.sh)."""
+    global _kokoro
+    if engine == "kokoro":
+        import soundfile as sf
+        from kokoro_onnx import Kokoro
+        model, vb = VOICES / "kokoro-v1.0.onnx", VOICES / "voices-v1.0.bin"
+        if not model.exists() or not vb.exists():
+            sys.exit(f"missing Kokoro model files in {VOICES}; run audio/get_voices.sh")
+        _kokoro = _kokoro or Kokoro(str(model), str(vb))
+        audio, sr = _kokoro.create(text, voice=voice, speed=spec.get("speed_factor", 1.0), lang=spec.get("lang", "en-us"))
+        sf.write(str(raw), audio, sr)
+    elif engine == "piper":
         model = VOICES / f"{voice}.onnx"
         if not model.exists():
             sys.exit(f"missing voice model {model}; run audio/get_voices.sh")
@@ -57,7 +68,8 @@ for i, line in enumerate(spec["lines"]):
     clean = OUT / f"line{line['id']}.wav"
     pitch = spec.get("pitch", 1.0)  # <1 = deeper, calmer; duration is kept
     shift = f"asetrate=22050*{pitch},aresample=22050,atempo={1/pitch:.4f}," if engine == "piper" and pitch != 1.0 else ""
-    eq = (shift + "highpass=f=80,lowpass=f=8500,acompressor=threshold=-20dB:ratio=3:attack=15:release=220," if engine == "piper" else
+    eq = ("highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=220," if engine == "kokoro" else
+          shift + "highpass=f=80,lowpass=f=8500,acompressor=threshold=-20dB:ratio=3:attack=15:release=220," if engine == "piper" else
           "highpass=f=90,lowpass=f=9000,equalizer=f=2800:t=q:w=1.2:g=-2,acompressor=threshold=-18dB:ratio=3:attack=10:release=120,")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),
                     "-af", eq + "aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=7",

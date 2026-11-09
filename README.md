@@ -48,7 +48,7 @@ re-render of a single second is just `--preview`.
 ## Rebuild
 
 Requirements: Node 18+ with `playwright` (and its Chromium), Python 3 with numpy and Pillow,
-ffmpeg, the `piper-tts` Python package plus `audio/get_voices.sh` for the voice model (espeak-ng + mbrola-en1 optional fallback).
+ffmpeg, the `kokoro-onnx` and `soundfile` Python packages plus `audio/get_voices.sh` for the model files (`piper-tts` or espeak-ng + mbrola-en1 as optional fallbacks).
 
 ```bash
 ./build.sh future_100_years            # full pipeline (~15 min on 4 cores, mostly frame rendering)
