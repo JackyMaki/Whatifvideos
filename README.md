@@ -22,7 +22,8 @@ scene-by-scene breakdown.
 render/common.js            shared world: deterministic helpers, sky/sun/moon/stars, terrain, mountains,
                             trees, clouds, the day cycle, caption/clock/title overlay
 render/render_frames.js     Playwright + headless Chromium frame renderer (parallel workers)
-render/city.js              street-level city kit: plaza/road, textured buildings, lamps, blocky people, cars
+render/city.js              street-level city kit: orderly streets, storefront buildings, kerb lamps/trees,
+                            rounded blocky people with faces and clothes, lane-based pedestrians, cars
 render/lib/                 vendored three.js (MIT)
 audio/make_narration.py     espeak-ng + MBROLA voice, EQ, loudness, timeline placement
 audio/synth.py              tiny numpy synth (pads, plucks, arpeggios, drones, reverb)
@@ -44,6 +45,10 @@ re-render of a single second is just `--preview`.
 * A minimal stat block sits top-left: small tracked label, big serif value, small sub-line (the clock).
 * Scenes are blocky low-poly, shot at eye level where the story allows, with soft shadows and
   distance haze (`createWorld({ shadows: true, fog })`), and one continuous sunrise-to-night cycle.
+* Cities are laid out, not scattered: lamps and trees on the kerbs at regular spacing, traffic lights at
+  the crosswalk, shop fronts with awnings and signs on the row across the street, pedestrians on lanes
+  with fixed spacing so nobody walks through anyone.
+* Narration is a close-mic "loud whisper": the Kokoro voice run through `audio/whisper.py`.
 
 ## Rebuild
 

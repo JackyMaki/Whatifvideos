@@ -15,24 +15,11 @@
 
 <script type="module">
 import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, photoTexture, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+import { L, lam, glowMat, solid, roundedBox, buildStreets, buildBuildings, addStorefront, buildStreetFurniture, updateTrafficLights, person, animateGait, makePedestrians, placePedestrian, buildCars } from '../../render/city.js';
 injectBaseCss();
 
 const world = createWorld({ seed: 2126, canvas: document.getElementById('c'), ground: 'none', shadows: true, shadowExtent: 34, fog: 0.014, clouds: 10 });
 const { rng, R, renderer, scene, camera, hemi, sunLight } = world;
-const lam = (c, extra = {}) => new THREE.MeshLambertMaterial({ color: c, ...extra });
-const glowMat = (c, o = 0.5) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-function solid(geo, mat, cast = true, recv = true) { const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = recv; return m; }
-const pick = arr => arr[Math.floor(rng() * arr.length)];
-
-// ---------------------------------------------------------------------------
-// Timeline constants
-// ---------------------------------------------------------------------------
-const WAKE = 11.8;
-const wakeU = t => smooth((t - WAKE) / 1.8);
-const sleepAgainU = t => smooth((t - 53.5) / 2.6);
-const yearU = t => smooth((t - WAKE) / 1.9);
-const cityU = t => kf(t, [[WAKE + 0.6, 0], [WAKE + 5.4, 1]]);
-const liftU = t => kf(t, [[WAKE + 1.2, 0], [WAKE + 4.6, 1]]);
 const NIGHT_DAY = { ...DAY,
   SKY: {
     top: [[0, '#3a4f7e'], [7, '#5f9be0'], [24, '#4f8fdc'], [34, '#5a5f9e'], [39, '#4a3a7a'], [44, '#1b1f4a'], [49, '#060a1f'], [60, '#050816']],
@@ -43,160 +30,74 @@ const NIGHT_DAY = { ...DAY,
   hemiGround: [[0, '#4a3a3a'], [7, '#55565a'], [44, '#232a44'], [60, '#1f2640']] };
 
 // ---------------------------------------------------------------------------
-// Ground: plaza, road, sidewalks, markings
+// Timeline: a sleeper who dozed off on a plaza bench wakes a century later
 // ---------------------------------------------------------------------------
-function tileTexture(base, line, nx, ny) {
-  const c = document.createElement('canvas'); c.width = 512; c.height = 512; const g = c.getContext('2d');
-  g.fillStyle = base; g.fillRect(0, 0, 512, 512); g.strokeStyle = line; g.lineWidth = 3;
-  for (let i = 0; i <= nx; i++) { g.beginPath(); g.moveTo(i * 512 / nx, 0); g.lineTo(i * 512 / nx, 512); g.stroke(); }
-  for (let j = 0; j <= ny; j++) { g.beginPath(); g.moveTo(0, j * 512 / ny); g.lineTo(512, j * 512 / ny); g.stroke(); }
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; return tex;
-}
-{
-  const base = solid(new THREE.PlaneGeometry(400, 400), lam(0x5b6a4c), false, true); base.rotation.x = -Math.PI / 2; base.position.y = -0.52; scene.add(base);
-  const plazaTex = tileTexture('#c9c2b6', '#b3aca0', 6, 6); plazaTex.repeat.set(7, 4);
-  const plaza = solid(new THREE.BoxGeometry(30, 0.5, 16), lam(0xffffff, { map: plazaTex }), false, true); plaza.position.set(0, -0.75, 1); scene.add(plaza);
-  const walkMat = lam(0xb9b3a8);
-  for (const [w, d, x, z] of [[100, 1.8, 0, -6.9], [100, 1.8, 0, -16.1], [1.8, 30, -8.6, -2], [1.8, 30, 8.6, -2]]) { const sw = solid(new THREE.BoxGeometry(w, 0.5, d), walkMat, false, true); sw.position.set(x, -0.75, z); scene.add(sw); }
-  const road = solid(new THREE.BoxGeometry(100, 0.44, 7.6), lam(0x2e3034), false, true); road.position.set(0, -0.78, -11.5); scene.add(road);
-  const paint = lam(0xe8e4d8, { emissive: 0x222222 });
-  for (let x = -48; x < 48; x += 3) { const dash = solid(new THREE.BoxGeometry(1.6, 0.02, 0.14), paint, false, false); dash.position.set(x, -0.55, -11.5); scene.add(dash); }
-  for (let x = -2.4; x <= 2.4; x += 0.8) { const stripe = solid(new THREE.BoxGeometry(0.45, 0.02, 7.2), paint, false, false); stripe.position.set(x, -0.55, -11.5); scene.add(stripe); }
-  const kerbMat = lam(0x9a948a);
-  for (const z of [-7.9, -15.1]) { const k = solid(new THREE.BoxGeometry(100, 0.2, 0.2), kerbMat, false, true); k.position.set(0, -0.6, z); scene.add(k); }
-}
+const WAKE = 11.8;
+const wakeU = t => smooth((t - WAKE) / 1.8);
+const sleepAgainU = t => smooth((t - 53.5) / 2.6);
+const yearU = t => smooth((t - WAKE) / 1.9);
+const cityU = t => kf(t, [[WAKE + 0.6, 0], [WAKE + 5.4, 1]]);
+const liftU = t => kf(t, [[WAKE + 1.2, 0], [WAKE + 4.6, 1]]);
 
 // ---------------------------------------------------------------------------
-// Buildings with window facades (and a glowing 2126 upgrade), lamps, lights, trees
+// City (2026 look; glowing 2126 upgrades fade in)
 // ---------------------------------------------------------------------------
-function facadeTexture(seed, cols, rows, wall, frame) {
-  const r = mulberry32(seed); const c = document.createElement('canvas'); c.width = 256; c.height = 512; const g = c.getContext('2d');
-  g.fillStyle = wall; g.fillRect(0, 0, 256, 512);
-  const lit = document.createElement('canvas'); lit.width = 256; lit.height = 512; const gl = lit.getContext('2d'); gl.fillStyle = '#000'; gl.fillRect(0, 0, 256, 512);
-  const cw = 256 / cols, rh = 512 / rows;
-  for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
-    const x = i * cw + cw * 0.22, y = j * rh + rh * 0.2, w = cw * 0.56, h = rh * 0.55;
-    g.fillStyle = frame; g.fillRect(x - 3, y - 3, w + 6, h + 6);
-    const shade = 0.25 + r() * 0.35; g.fillStyle = `rgb(${Math.round(110 * shade + 40)},${Math.round(130 * shade + 50)},${Math.round(160 * shade + 60)})`; g.fillRect(x, y, w, h);
-    if (r() < 0.55) { const warm = r() < 0.75; gl.fillStyle = warm ? `rgba(255,${200 + r() * 40 | 0},${130 + r() * 60 | 0},${0.6 + r() * 0.4})` : `rgba(170,220,255,${0.5 + r() * 0.5})`; gl.fillRect(x, y, w, h); }
-  }
-  const mk = cv => { const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; return tex; };
-  return { map: mk(c), emissiveMap: mk(lit) };
+buildStreets(world);
+const buildings = buildBuildings(world, { nearHeights: [4.5, 9], sideHeights: [4.5, 8.5] });
+const { lampHeads, trafficLights } = buildStreetFurniture(world, { benches: false });
+const cars = buildCars(world, 12);
+for (const b of buildings) { b.grow = b.row === 'shop' ? R(1.2, 1.6) : b.row === 'side' ? R(1.25, 1.8) : b.row === 'mid' ? R(1.5, 2.4) : R(1.8, 3.0); b.delay = b.row === 'shop' ? R(0, 0.3) : b.row === 'side' ? R(0.05, 0.35) : b.row === 'mid' ? R(0.25, 0.6) : R(0.45, 0.85);
+  b.trims = [];
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { const tr = new THREE.Mesh(new THREE.BoxGeometry(0.12, b.h, 0.12), glowMat(0x7cf5ff, 0)); tr.position.set(sx * b.w / 2, b.h / 2, sz * b.d / 2); b.g.add(tr); b.trims.push(tr); }
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.4, 0.12, b.d + 0.4), glowMat(0x7cf5ff, 0)); crown.position.y = b.h + 0.4; b.g.add(crown); b.trims.push(crown); }
+for (const [bx, nm, col, aw] of [[4, 'SUPERMARKET', '#d63a2f', 0xb83a30], [-11, 'CAFÉ', '#2f6f4e', 0x2f6f4e], [17, 'BOOKS', '#7a4a9a', 0x5a3a7a]]) { const b = buildings.filter(b => b.row === 'shop' && !b.store).sort((a, c) => Math.abs(a.x - bx) - Math.abs(c.x - bx))[0]; if (b) { b.store = addStorefront(world, b, { name: nm, color: col, awning: aw }); } }
+// hovering platforms that rise with the new skyline
+const platforms = [];
+for (let i = 0; i < 4; i++) {
+  const g = new THREE.Group(); const r = R(3, 5.5);
+  g.add(solid(new THREE.CylinderGeometry(r, r * 0.8, 0.5, 10), lam(0x8d9bc2)));
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(r * 0.95, 0.18, 6, 28), glowMat(0x7cf5ff, 0.8)); rim.rotation.x = Math.PI / 2; rim.position.y = -0.2; g.add(rim);
+  for (let k = 0; k < 3; k++) { const b = solid(new THREE.BoxGeometry(R(0.8, 1.6), R(0.6, 1.4), R(0.8, 1.6)), lam(0xb9c4e0)); b.position.set(R(-r * 0.5, r * 0.5), 0.8, R(-r * 0.5, r * 0.5)); g.add(b); }
+  g.userData = { x: R(-30, 30), y: R(12, 20), z: R(-50, -34), bob: R(0, 6.28), delay: 0.6 + i * 0.1 }; g.visible = false; scene.add(g); platforms.push(g);
 }
-const buildings = [];
-const WALLS = ['#b9a99a', '#8e8a86', '#a86f5a', '#cfc4b4', '#7b8794', '#c2b280', '#9a8f9e', '#6f7a86'];
-function addBuilding(x, z, w, d, h, grow, delay) {
-  const g = new THREE.Group(); g.position.set(x, -0.5, z);
-  const cols = Math.max(2, Math.round(w / 1.6)), rows = Math.max(3, Math.round(h / 1.5));
-  const tex = facadeTexture(Math.floor(rng() * 1e6), cols, rows, pick(WALLS), '#3a3a40');
-  const mat = new THREE.MeshLambertMaterial({ map: tex.map, emissiveMap: tex.emissiveMap, emissive: 0xffd9a0, emissiveIntensity: 0 });
-  const body = solid(new THREE.BoxGeometry(w, h, d), mat); body.position.y = h / 2; g.add(body);
-  const roof = solid(new THREE.BoxGeometry(w + 0.3, 0.35, d + 0.3), lam(0x4a4a50)); roof.position.y = h + 0.17; g.add(roof);
-  const trims = [];
-  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { const tr = new THREE.Mesh(new THREE.BoxGeometry(0.12, h, 0.12), glowMat(0x7cf5ff, 0)); tr.position.set(sx * w / 2, h / 2, sz * d / 2); g.add(tr); trims.push(tr); }
-  const crown = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.12, d + 0.4), glowMat(0x7cf5ff, 0)); crown.position.y = h + 0.4; g.add(crown); trims.push(crown);
-  scene.add(g); buildings.push({ g, body, h, grow, trims, delay, mat, roof }); return g;
-}
-{
-  for (let x = -46; x < 46;) { const w = R(5, 9), d = R(7, 11), h = R(4.5, 9); addBuilding(x + w / 2, -19.5 - d / 2, w, d, h, R(1.2, 1.6), R(0, 0.3)); x += w + R(0.4, 1.2); }
-  for (const side of [-1, 1]) for (let z = -18; z < 14;) { const w = R(6, 9), d = R(5, 8), h = R(4, 8.5); addBuilding(side * (11.4 + w / 2), z + d / 2, w, d, h, R(1.25, 1.8), R(0.05, 0.35)); z += d + R(0.4, 1.0); }
-  for (let x = -60; x < 60;) { const w = R(7, 12), d = R(8, 12), h = R(8, 16); addBuilding(x + w / 2, -36 - d / 2 - R(0, 6), w, d, h, R(1.5, 2.4), R(0.25, 0.6)); x += w + R(0.5, 2.5); }
-  for (let x = -80; x < 80;) { const w = R(9, 14), d = R(9, 14), h = R(12, 26); addBuilding(x + w / 2, -58 - d / 2 - R(0, 12), w, d, h, R(1.8, 3.0), R(0.45, 0.85)); x += w + R(1, 4); }
-}
-const lampHeads = [];
-for (const [x, z] of [[-6, -6.9], [6, -6.9], [-14, -6.9], [14, -6.9], [-10, -16.1], [10, -16.1], [-8.6, 4], [8.6, 4], [-8.6, -4], [8.6, -4]]) {
-  const pole = solid(new THREE.CylinderGeometry(0.08, 0.11, 5.2, 6), lam(0x3a3f48)); pole.position.set(x, 2.1, z); scene.add(pole);
-  const arm = solid(new THREE.BoxGeometry(0.1, 0.1, 1.1), lam(0x3a3f48)); arm.position.set(x, 4.6, z + (z < -10 ? 0.5 : -0.5)); scene.add(arm);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.5), new THREE.MeshBasicMaterial({ color: 0xffe9c0, toneMapped: false })); head.position.set(x, 4.6, z + (z < -10 ? 1.0 : -1.0)); scene.add(head); lampHeads.push(head);
-}
-const trafficLights = [];
-for (const [x, z, rotY] of [[3.6, -7.3, 0], [-3.6, -15.7, Math.PI]]) {
-  const pole = solid(new THREE.CylinderGeometry(0.09, 0.11, 5.4, 6), lam(0x2d3138)); pole.position.set(x, 2.2, z); scene.add(pole);
-  const arm = solid(new THREE.BoxGeometry(3.6, 0.14, 0.14), lam(0x2d3138)); arm.position.set(x - 1.8 * (rotY ? -1 : 1), 4.9, z); scene.add(arm);
-  const box = solid(new THREE.BoxGeometry(0.34, 0.95, 0.3), lam(0x1e2126)); box.position.set(x - 3.2 * (rotY ? -1 : 1), 4.4, z); box.rotation.y = rotY; scene.add(box);
-  const lights = [0xff3b2f, 0xffc93c, 0x3bd35a].map((c, i) => { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 8), new THREE.MeshBasicMaterial({ color: c, toneMapped: false })); l.rotation.x = Math.PI / 2; l.position.set(0, 0.3 - i * 0.3, 0.16); box.add(l); return l; });
-  trafficLights.push({ lights, phase: rotY ? 0.5 : 0 });
-}
-const treeMats = [lam(0x4f8f4a), lam(0x5aa65a), lam(0x3f7f3f)];
-for (const [x, z] of [[-6.5, 6.5], [6.5, 6.5], [-6.5, -4.5], [6.5, -4.5], [-18, -6.0], [18, -6.0], [-24, -6.0], [24, -6.0], [-18, -17], [18, -17], [-30, -17], [30, -17]]) {
-  const planter = solid(new THREE.BoxGeometry(1.2, 0.5, 1.2), lam(0x8d7b6a)); planter.position.set(x, -0.3, z); scene.add(planter);
-  const trunk = solid(new THREE.CylinderGeometry(0.1, 0.14, 1.6, 6), lam(0x6b4a2e)); trunk.position.set(x, 0.7, z); scene.add(trunk);
-  const crown = solid(new THREE.IcosahedronGeometry(R(0.9, 1.3), 1), pick(treeMats)); crown.position.set(x, 2.1, z); crown.scale.y = 1.15; scene.add(crown);
-}
+// cars gain trails and under-glow once they fly
+for (const c of cars) { const d = c.userData; const trail = new THREE.Mesh(new THREE.BoxGeometry(d.L * 2.4, 0.08, 0.14), glowMat(0x7cf5ff, 0)); trail.position.set(-d.L * 1.5, 0.3, 0); c.add(trail); const under = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0x7cf5ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); under.scale.setScalar(2.2); under.position.y = -0.1; c.add(under); Object.assign(d, { trail, under, skyY: R(6.5, 12.5), skyZ: R(-24, -9), liftDelay: R(0, 0.5) }); }
 
 // ---------------------------------------------------------------------------
-// Blocky people walking the sidewalks and plaza
+// People: pedestrians on lanes, a few standers who will read holo screens
 // ---------------------------------------------------------------------------
-const SKINS = [0xf1c27d, 0xe0ac69, 0xc68642, 0x8d5524, 0xffdbac], SHIRTS = [0xd9534f, 0x3b7dd8, 0xf2b134, 0x5aa65a, 0x8e5ad8, 0xffffff, 0x2b2f3a, 0xff8a3d, 0x2fb5a3, 0xd84f8e, 0xe8e2d6], PANTS = [0x2b3a55, 0x3a3a3a, 0x6b4a2e, 0x8a8f99, 0x1f1f24], HAIRS = [0x2a1a0e, 0x4a3020, 0x8a6a3a, 0x111111, 0xc9a26a];
-function person() {
-  const g = new THREE.Group(); const skin = lam(pick(SKINS)), shirt = lam(pick(SHIRTS)), pants = lam(pick(PANTS));
-  const torso = solid(new THREE.BoxGeometry(0.62, 0.78, 0.32), shirt); torso.position.y = 1.17; g.add(torso);
-  const head = solid(new THREE.BoxGeometry(0.46, 0.46, 0.46), skin); head.position.y = 1.86; g.add(head);
-  const hair = solid(new THREE.BoxGeometry(0.5, 0.14, 0.5), lam(pick(HAIRS))); hair.position.y = 2.12; g.add(hair);
-  const limbs = {};
-  for (const [name, sx] of [['la', -1], ['ra', 1]]) { const piv = new THREE.Group(); piv.position.set(sx * 0.42, 1.52, 0); const arm = solid(new THREE.BoxGeometry(0.2, 0.74, 0.2), shirt); arm.position.y = -0.37; piv.add(arm); g.add(piv); limbs[name] = piv; }
-  for (const [name, sx] of [['ll', -1], ['rl', 1]]) { const piv = new THREE.Group(); piv.position.set(sx * 0.16, 0.78, 0); const leg = solid(new THREE.BoxGeometry(0.26, 0.78, 0.26), pants); leg.position.y = -0.39; piv.add(leg); g.add(piv); limbs[name] = piv; }
-  g.userData.limbs = limbs; return g;
-}
-const people = [];
-function addWalker(path, speed, phase) { const g = person(); scene.add(g); people.push({ g, path, speed, phase, ph: R(0, 6.28) }); return g; }
-for (let i = 0; i < 12; i++) addWalker({ kind: 'x', z: -16.1 + R(-0.5, 0.5), dir: i % 2 ? 1 : -1 }, R(0.9, 1.5), R(-40, 40));
-for (let i = 0; i < 10; i++) addWalker({ kind: 'x', z: -6.9 + R(-0.5, 0.5), dir: i % 2 ? 1 : -1 }, R(0.9, 1.5), R(-40, 40));
-for (let i = 0; i < 8; i++) addWalker({ kind: 'z', x: (i % 2 ? 1 : -1) * (8.6 + R(-0.5, 0.5)), dir: i < 4 ? 1 : -1 }, R(0.8, 1.3), R(-14, 12));
+const peds = makePedestrians(world, [
+  { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: 1, count: 8, speed: 1.2 }, { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: -1, count: 7, speed: 1.1 },
+  { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: 1, count: 6, speed: 1.15 }, { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: -1, count: 6, speed: 1.3 },
+  { axis: 'z', at: -L.sideX + 1.5, from: -18, to: 15, dir: 1, count: 3, speed: 1.1 }, { axis: 'z', at: L.sideX - 1.5, from: -18, to: 15, dir: -1, count: 3, speed: 1.2 },
+], { gap: 2.6, laneOffset: 0.45 });
 const standers = [];
-for (const [x, z, ry] of [[-4.6, 3.2, 0.6], [4.8, 2.6, -0.8], [-3.2, -4.2, 2.4], [5.6, -3.4, -2.6], [-6.8, 0.4, 1.2], [3.0, 5.6, 2.9]]) { const g = person(); g.position.set(x, -0.5, z); g.rotation.y = ry; scene.add(g); standers.push({ g, ph: R(0, 6.28) }); }
+for (const [x, z, ry, extra] of [[-4.8, 3.6, 0.6, { phone: true }], [5.0, 3.0, -0.8, { phone: true }], [-3.4, -3.8, 2.4, {}], [5.8, -3.2, -2.6, { phone: true }], [-7.2, 0.6, 1.2, {}], [3.2, 6.4, 2.9, {}]]) { const g = person(world, extra); g.position.set(x, -0.5, z); g.rotation.y = ry; scene.add(g); standers.push({ g, ph: R(0, 6.28) }); }
 
 // ---------------------------------------------------------------------------
-// Cars: drive the road in 2026, lift into sky lanes in 2126
+// The bench and the sleeper (plaza centre).  They fell asleep on a park bench; the bench stays, the world changes.
 // ---------------------------------------------------------------------------
-const cars = [];
+const bench = new THREE.Group(); bench.position.set(0, -0.5, 0.6); scene.add(bench);
 {
-  const cols = [0xd9d9d9, 0xc0392b, 0x2c3e50, 0xf2b134, 0x3b7dd8, 0xffffff, 0x7f8c8d, 0x27ae60];
-  for (let i = 0; i < 12; i++) {
-    const g = new THREE.Group(); const van = i % 5 === 0; const L = van ? 3.2 : 2.3, H = van ? 1.3 : 0.75;
-    const body = solid(new THREE.BoxGeometry(L, H, 1.3), lam(cols[i % cols.length])); body.position.y = 0.55 + H / 2 - 0.3; g.add(body);
-    if (!van) { const cab = solid(new THREE.BoxGeometry(L * 0.5, 0.5, 1.15), lam(0x1f2a3a)); cab.position.set(-0.1, 1.05, 0); g.add(cab); }
-    const wheels = [];
-    for (const [sx, sz] of [[-0.7, -0.6], [0.7, -0.6], [-0.7, 0.6], [0.7, 0.6]]) { const w = solid(new THREE.CylinderGeometry(0.26, 0.26, 0.2, 8), lam(0x111111)); w.rotation.x = Math.PI / 2; w.position.set(sx * L / 2.2, 0.26, sz); g.add(w); wheels.push(w); }
-    const lights = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 1.0), new THREE.MeshBasicMaterial({ color: 0xfff2c0, toneMapped: false })); lights.position.set(L / 2, 0.6, 0); g.add(lights);
-    const trail = new THREE.Mesh(new THREE.BoxGeometry(L * 2.4, 0.08, 0.14), glowMat(0x7cf5ff, 0)); trail.position.set(-L * 1.5, 0.3, 0); g.add(trail);
-    const under = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0x7cf5ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); under.scale.setScalar(2.2); under.position.y = -0.1; g.add(under);
-    const dir = i % 2 ? 1 : -1;
-    g.userData = { dir, speed: R(4, 7), x0: R(-50, 50), laneZ: dir > 0 ? -9.6 : -13.4, skyY: R(6.5, 12.5), skyZ: R(-24, -9), liftDelay: R(0, 0.5), wheels, trail, under, bob: R(0, 6.28) };
-    scene.add(g); cars.push(g);
-  }
+  const wood = lam(0x8a6a4a), iron = lam(0x2d3138);
+  const seat = solid(new THREE.BoxGeometry(2.6, 0.12, 0.7), wood); seat.position.y = 0.5; bench.add(seat);
+  const back = solid(new THREE.BoxGeometry(2.6, 0.5, 0.1), wood); back.position.set(0, 0.85, -0.32); back.rotation.x = -0.15; bench.add(back);
+  for (const sx of [-1.1, 1.1]) { const leg = solid(new THREE.BoxGeometry(0.12, 0.5, 0.7), iron); leg.position.set(sx, 0.25, 0); bench.add(leg); const arm = solid(new THREE.BoxGeometry(0.1, 0.1, 0.7), iron); arm.position.set(sx, 0.78, 0); bench.add(arm); }
+  const blanket = solid(roundedBox(1.9, 0.22, 0.6, 0.3), lam(0x4f86d6)); blanket.position.set(-0.3, 0.66, 0.05); bench.add(blanket); bench.userData.blanket = blanket;
+  const bagM = solid(roundedBox(0.5, 0.4, 0.3, 0.3), lam(0x8a3a2e)); bagM.position.set(1.6, 0.2, 0.3); bench.add(bagM);
 }
-
-// ---------------------------------------------------------------------------
-// The bed and the sleeper (plaza centre)
-// ---------------------------------------------------------------------------
-const bed = new THREE.Group(); bed.position.y = -0.5; scene.add(bed);
-{
-  const wood = lam(0x7a4e32);
-  const frame = solid(new THREE.BoxGeometry(2.6, 0.45, 4.4), wood); frame.position.y = 0.45; bed.add(frame);
-  for (const [x, z] of [[-1.15, -2.0], [1.15, -2.0], [-1.15, 2.0], [1.15, 2.0]]) { const leg = solid(new THREE.BoxGeometry(0.22, 0.5, 0.22), wood); leg.position.set(x, 0.25, z); bed.add(leg); }
-  const head = solid(new THREE.BoxGeometry(2.6, 1.4, 0.18), wood); head.position.set(0, 1.1, -2.25); bed.add(head);
-  const mattress = solid(new THREE.BoxGeometry(2.4, 0.4, 4.2), lam(0xf4efe6)); mattress.position.y = 0.87; bed.add(mattress);
-  const blanket = solid(new THREE.BoxGeometry(2.5, 0.3, 3.0), lam(0x4f86d6)); blanket.position.set(0, 1.18, 0.55); bed.add(blanket);
-  const fold = solid(new THREE.BoxGeometry(2.5, 0.12, 0.5), lam(0x6ea0e8)); fold.position.set(0, 1.4, -0.9); bed.add(fold);
-  const pillow = solid(new THREE.BoxGeometry(1.5, 0.3, 0.8), lam(0xffffff)); pillow.position.set(0, 1.18, -1.65); pillow.rotation.y = 0.08; bed.add(pillow);
-}
-const hips = new THREE.Group(); hips.position.set(0, 1.05, -0.65); bed.add(hips);
+// the sleeper: lies along the bench, sits up at WAKE, lies back at the end
+const hips = new THREE.Group(); hips.position.set(0.55, 0.56, 0.0); bench.add(hips);
 const upper = new THREE.Group(); hips.add(upper);
-{
-  const skin = lam(0xf1c27d), pj = lam(0x7fc8e8);
-  const torso = solid(new THREE.BoxGeometry(0.72, 0.9, 0.36), pj); torso.position.y = 0.5; upper.add(torso);
-  const headG = new THREE.Group(); headG.position.y = 1.25; upper.add(headG);
-  headG.add(solid(new THREE.BoxGeometry(0.5, 0.5, 0.5), skin));
-  const hair = solid(new THREE.BoxGeometry(0.54, 0.16, 0.54), lam(0x4a3020)); hair.position.y = 0.3; headG.add(hair);
-  for (const sx of [-1, 1]) { const eye = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.03), lam(0x222222)); eye.position.set(sx * 0.12, 0.02, 0.26); headG.add(eye); }
-  for (const sx of [-1, 1]) { const arm = solid(new THREE.BoxGeometry(0.2, 0.8, 0.2), pj); arm.position.set(sx * 0.48, 0.5, 0.1); arm.rotation.z = sx * 0.22; upper.add(arm); }
-  upper.userData.head = headG;
+const sleeperModel = person(world, { skin: 0xf1c27d, shirt: 0x7fc8e8, pants: 0x2b3a55, hair: 0x4a3020, hairStyle: 'short', jacket: false, bag: false });
+{ // reuse the person's torso/head/arms as the upper body; hide its legs (under the blanket)
+  const Lb = sleeperModel.userData.limbs; Lb.ll.visible = false; Lb.rl.visible = false;
+  sleeperModel.position.y = -0.78; upper.add(sleeperModel);
 }
 const zzz = [0, 1, 2].map(k => ({ s: textSprite(scene, 'z', { color: '#eef3ff', size: 180, weight: 500, font: '"EB Garamond", serif' }), k }));
 
 // ---------------------------------------------------------------------------
-// Holo screens (sleeper + a few passers-by), the old phone
+// Holo screens, old phone, coins, photos, helix, shooting stars
 // ---------------------------------------------------------------------------
 function holoTexture(kind) {
   const c = document.createElement('canvas'); c.width = 512; c.height = 320; const g = c.getContext('2d');
@@ -210,31 +111,27 @@ function holoTexture(kind) {
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex;
 }
 const holoMat = kind => new THREE.MeshBasicMaterial({ map: holoTexture(kind), transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, toneMapped: false });
-const HOLO_SLOTS = [[-1.3, 4.0, 0.5], [1.3, 4.0, 0.5], [-1.55, 2.7, 1.0], [1.55, 2.7, 1.0]];
+const HOLO_SLOTS = [[-1.3, 3.6, 0.9], [1.3, 3.6, 0.9], [-1.55, 2.3, 1.4], [1.55, 2.3, 1.4]];
 const holos = ['news', 'weather', 'translate', 'health'].map((kind, i) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.06), holoMat(kind)); m.visible = false; scene.add(m); const [x, y, z] = HOLO_SLOTS[i]; return { m, x, y, z, delay: i * 0.35, bob: R(0, 6.28) }; });
 const peopleHolos = standers.slice(0, 4).map((s, i) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.56), holoMat(i % 2 ? 'feed' : 'transit')); m.visible = false; scene.add(m); return { m, s, delay: 0.4 + i * 0.25 }; });
 const phone = new THREE.Group();
-{ phone.add(solid(new THREE.BoxGeometry(0.6, 1.2, 0.08), lam(0x1a1d26))); const scr = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.02), new THREE.MeshBasicMaterial({ color: 0x223, toneMapped: false })); scr.position.z = 0.045; phone.add(scr); phone.visible = false; scene.add(phone); }
+{ phone.add(solid(roundedBox(0.6, 1.2, 0.08, 0.3), lam(0x1a1d26))); const scr = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 0.02), new THREE.MeshBasicMaterial({ color: 0x223, toneMapped: false })); scr.position.z = 0.045; phone.add(scr); phone.visible = false; scene.add(phone); }
 const phoneTag = textSprite(scene, 'museum piece', { color: '#ffe3b3', size: 120, weight: 500, font: '"EB Garamond", serif' });
-
-// ---------------------------------------------------------------------------
-// Sunset shock: coins, photographs.  Night: DNA helix + healing particles.  Ending: shooting stars.
-// ---------------------------------------------------------------------------
 const coins = [];
-{ const gray = lam(0x8a8f99); for (let i = 0; i < 44; i++) { const m = solid(new THREE.CylinderGeometry(0.28, 0.28, 0.07, 8), lam(0xffc93c, { emissive: 0x7a5a10 })); m.visible = false; scene.add(m); coins.push({ m, t0: 33.6 + R(0, 7.5), x: R(-3.5, 3.5), z: R(-2.5, 3), spin: R(2, 6), gray }); } }
+{ const gray = lam(0x8a8f99); for (let i = 0; i < 44; i++) { const m = solid(new THREE.CylinderGeometry(0.28, 0.28, 0.07, 10), lam(0xffc93c, { emissive: 0x7a5a10 })); m.visible = false; scene.add(m); coins.push({ m, t0: 33.6 + R(0, 7.5), x: R(-3.5, 3.5), z: R(-2.5, 3), spin: R(2, 6), gray }); } }
 const photos = [];
 for (let i = 0; i < 8; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.975), new THREE.MeshBasicMaterial({ map: photoTexture(300 + i), side: THREE.DoubleSide, transparent: true, opacity: 0, toneMapped: false })); m.visible = false; scene.add(m); photos.push({ m, t0: 37.2 + i * 0.45, dur: 4.2, x: R(-2.2, 2.2), z: R(-1, 2.5), drift: new THREE.Vector3(R(-2.5, 2.5), R(3, 5), R(-1, 1)), rot: R(-1, 1) }); }
-const helix = new THREE.Group(); helix.position.set(0, 4.3, 0); helix.visible = false; scene.add(helix);
+const helix = new THREE.Group(); helix.position.set(0, 3.9, 0.6); helix.visible = false; scene.add(helix);
 {
   const a = lam(0x5fe8d2, { emissive: 0x2fb5a0, emissiveIntensity: 0.9 }), b = lam(0x9ff3ff, { emissive: 0x3b9fd8, emissiveIntensity: 0.9 }), rung = glowMat(0xbdfff5, 0.75);
   const N = 26, H = 5.0, RAD = 1.0;
-  for (let i = 0; i < N; i++) { const y = -H / 2 + (i / (N - 1)) * H, ang = i * 0.55; const s1 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), a); s1.position.set(Math.cos(ang) * RAD, y, Math.sin(ang) * RAD); const s2 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), b); s2.position.set(-Math.cos(ang) * RAD, y, -Math.sin(ang) * RAD); const rg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, RAD * 2, 4), rung); rg.position.y = y; rg.rotation.z = Math.PI / 2; rg.rotation.y = -ang; helix.add(s1, s2, rg); }
+  for (let i = 0; i < N; i++) { const y = -H / 2 + (i / (N - 1)) * H, ang = i * 0.55; const s1 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 1), a); s1.position.set(Math.cos(ang) * RAD, y, Math.sin(ang) * RAD); const s2 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 1), b); s2.position.set(-Math.cos(ang) * RAD, y, -Math.sin(ang) * RAD); const rg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, RAD * 2, 6), rung); rg.position.y = y; rg.rotation.z = Math.PI / 2; rg.rotation.y = -ang; helix.add(s1, s2, rg); }
 }
 const healCount = 90, healPos = new Float32Array(healCount * 3), healSeed = [];
 for (let i = 0; i < healCount; i++) healSeed.push({ az: R(0, 6.28), rad: R(0.8, 3.2), phase: rng(), speed: R(0.18, 0.4) });
 const healGeo = new THREE.BufferGeometry(); healGeo.setAttribute('position', new THREE.BufferAttribute(healPos, 3));
 const heal = new THREE.Points(healGeo, new THREE.PointsMaterial({ color: 0x8fffe6, size: 16, sizeAttenuation: false, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, map: radialTexture(), alphaTest: 0.01 })); scene.add(heal);
-const helixLight = new THREE.PointLight(0x5fe8d2, 0, 22, 1.6); helixLight.position.set(0, 3.5, 1); scene.add(helixLight);
+const helixLight = new THREE.PointLight(0x5fe8d2, 0, 22, 1.6); helixLight.position.set(0, 3.2, 1.6); scene.add(helixLight);
 const yearTag = textSprite(scene, '2226?', { color: '#5fe8d2', size: 150, weight: 500, font: '"EB Garamond", serif' });
 const moonLamp = new THREE.PointLight(0x9fb4ff, 0, 24, 1.4); moonLamp.position.set(2.5, 6, 4); scene.add(moonLamp);
 const shooters = [54.2, 56.4, 58.6].map((t0, i) => { const m = new THREE.Mesh(new THREE.BoxGeometry(9, 0.22, 0.22), glowMat(0xffffff, 0.9)); m.material.fog = false; m.visible = false; scene.add(m); return { m, t0, x0: -30 + i * 25, y0: 70 - i * 8, dx: 22, dy: -9 }; });
@@ -244,9 +141,9 @@ const shooters = [54.2, 56.4, 58.6].map((t0, i) => { const m = new THREE.Mesh(ne
 // ---------------------------------------------------------------------------
 const CAM = {
   x: [[0, 0], [6, 0.8], [12, 0.8], [15.5, 1.8], [22, 1.8], [24.5, 0.3], [31, 0.3], [33.5, -1.6], [42, -1.6], [44, 0.8], [52, 0.8], [53.5, 0], [60, 0]],
-  y: [[0, 3.4], [6, 2.7], [12, 2.6], [15.5, 4.6], [22, 4.4], [24.5, 2.9], [31, 2.9], [33.5, 2.8], [42, 2.8], [44, 3.3], [52, 3.3], [53.5, 3.6], [60, 4.4]],
-  z: [[0, 16], [6, 11], [12, 10.5], [15.5, 14.5], [22, 13.5], [24.5, 10.5], [31, 10.5], [33.5, 9.5], [42, 10], [44, 12], [52, 12], [53.5, 12.5], [60, 17]],
-  ty: [[0, 1.4], [6, 1.5], [12, 1.6], [15.5, 4.3], [22, 4.4], [24.5, 2.6], [31, 2.6], [33.5, 2.2], [42, 2.2], [44, 2.9], [52, 2.9], [53.5, 2.8], [60, 3.0]],
+  y: [[0, 3.0], [6, 2.4], [12, 2.3], [15.5, 4.6], [22, 4.4], [24.5, 2.6], [31, 2.6], [33.5, 2.5], [42, 2.5], [44, 3.0], [52, 3.0], [53.5, 3.3], [60, 4.2]],
+  z: [[0, 14], [6, 9.5], [12, 9.0], [15.5, 14.5], [22, 13.5], [24.5, 10.5], [31, 10.5], [33.5, 9.5], [42, 10], [44, 12], [52, 12], [53.5, 12.5], [60, 17]],
+  ty: [[0, 1.0], [6, 1.1], [12, 1.2], [15.5, 4.3], [22, 4.4], [24.5, 2.2], [31, 2.2], [33.5, 1.8], [42, 1.8], [44, 2.4], [52, 2.4], [53.5, 2.4], [60, 2.6]],
 };
 const overlay = createOverlay({ highlight: /(one hundred years|twenty-one twenty-six|nobody drives|quiet lanes in the sky|museum piece|talk to the air|worthless|a century old|everyone you knew is gone|treatable condition|twenty-two twenty-six|go back to sleep)/gi });
 const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
@@ -263,71 +160,70 @@ const tmpV = new THREE.Vector3(), tmpC = new THREE.Color(), UP = new THREE.Vecto
 window.renderAt = function (t) {
   const { nt } = world.updateEnvironment(t, NIGHT_DAY);
   sunLight.position.set(lerp(-34, 30, clamp(t / 40, 0, 1)), lerp(20, 34, Math.sin(clamp(t / 40, 0, 1) * Math.PI)), 18);
-  moonLamp.intensity = nt * 60;
+  moonLamp.intensity = nt * 30;
   const cu = cityU(t), lu = liftU(t);
 
-  // --- sleeper ---
+  // --- sleeper: lying along the bench -> sitting up -> lying back ---
   const sit = wakeU(t) * (1 - sleepAgainU(t));
   const slump = win(t, 33.5, 43.0, 2.5, 1.5);
   const startle = t > WAKE + 1.2 ? Math.exp(-(t - WAKE - 1.2) * 3) : 0;
-  upper.rotation.x = lerp(-1.42, -0.08 - startle * 0.12 + slump * 0.32, sit) + (sit > 0.95 ? Math.sin(t * 2.1) * 0.015 : 0);
-  const head = upper.userData.head;
-  head.rotation.y = sit * (Math.sin(t * 0.9) * 0.55 * (t > WAKE + 1.5 && t < 33 ? 1 : 0.25) + startle * 0.6);
-  head.rotation.x = sit * (slump * 0.45 - 0.08 * win(t, 15, 24, 1, 1) + (t >= 43.5 && t < 52.5 ? -0.25 : 0));
+  upper.rotation.z = lerp(1.45, 0.0, sit);                                  // lying with the head toward -x
+  upper.rotation.x = sit * (-0.06 - startle * 0.12 + slump * 0.32) + (sit > 0.95 ? Math.sin(t * 2.1) * 0.015 : 0);
+  const Lb = sleeperModel.userData.limbs; const yawn = t > WAKE + 0.6 && t < WAKE + 2.6 ? Math.sin((t - WAKE - 0.6) / 2 * Math.PI) : 0;
+  Lb.head.rotation.y = sit * (Math.sin(t * 0.9) * 0.55 * (t > WAKE + 1.5 && t < 33 ? 1 : 0.25) + startle * 0.6);
+  Lb.head.rotation.x = sit * (slump * 0.45 - 0.08 * win(t, 15, 24, 1, 1) + (t >= 43.5 && t < 52.5 ? -0.25 : 0)) - yawn * 0.3;
+  Lb.la.rotation.x = lerp(-0.5, -0.2, sit) - yawn * 2.2; Lb.ra.rotation.x = lerp(-0.4, -0.2, sit) - yawn * 1.6; Lb.la.rotation.z = 0.15 + yawn * 0.6; Lb.ra.rotation.z = -0.15 - yawn * 0.4;
+  sleeperModel.userData.torso.rotation.x = 0;
+  bench.userData.blanket.position.x = lerp(-0.3, -0.9, sit); bench.userData.blanket.scale.x = lerp(1, 0.55, sit);
   const asleep = Math.max(win(t, -1, WAKE + 0.4, 0.1, 0.9), win(t, 56.6, 61, 0.9, 0.1));
-  for (const z of zzz) { const life = frac(t * 0.45 + z.k / 3); z.s.position.set(0.6 + life * 1.1, 1.6 + life * 2.0, -1.2 + life * 0.4); z.s.scale.setScalar(0.8 + life * 1.1); z.s.material.opacity = asleep * win(life, 0, 1, 0.15, 0.35) * 0.9; }
+  for (const z of zzz) { const life = frac(t * 0.45 + z.k / 3); z.s.position.set(-0.9 + life * 0.9, 1.2 + life * 2.0, 0.6 + life * 0.4); z.s.scale.setScalar(0.8 + life * 1.1); z.s.material.opacity = asleep * win(life, 0, 1, 0.15, 0.35) * 0.9; }
 
-  // --- people ---
-  for (const p of people) {
-    const { g, path, speed, phase, ph } = p; const s = speed * t + phase;
-    if (path.kind === 'x') { const x = ((s * path.dir + 50) % 100 + 100) % 100 - 50; g.position.set(x, -0.5, path.z); g.rotation.y = path.dir > 0 ? Math.PI / 2 : -Math.PI / 2; }
-    else { const z = ((s * path.dir + 16) % 30 + 30) % 30 - 16; g.position.set(path.x, -0.5, z); g.rotation.y = path.dir > 0 ? 0 : Math.PI; }
-    const sw = Math.sin(t * 7 * speed * 0.8 + ph) * 0.55; const L = g.userData.limbs;
-    L.ll.rotation.x = sw; L.rl.rotation.x = -sw; L.la.rotation.x = -sw * 0.8; L.ra.rotation.x = sw * 0.8; g.position.y = -0.5 + Math.abs(Math.cos(t * 7 * speed * 0.8 + ph)) * 0.04;
-  }
-  for (const s of standers) { const L = s.g.userData.limbs; const idle = Math.sin(t * 1.3 + s.ph) * 0.05; L.la.rotation.x = -0.9 * cu + idle; L.ra.rotation.x = -0.9 * cu - idle; L.la.rotation.z = 0.25 * cu; L.ra.rotation.z = -0.25 * cu; s.g.rotation.z = idle * 0.3; }
+  // --- pedestrians & standers ---
+  for (const p of peds) { placePedestrian(p, p.speed * t); animateGait(p.g, t * 7 * p.speed + p.ph, 'walk'); }
+  for (const s of standers) { animateGait(s.g, t * 1.4 + s.ph, 'idle'); const Ls = s.g.userData.limbs; if (s.g.userData.phone) { Ls.ra.rotation.x = -1.5 * (1 - cu) - 0.9 * cu; Ls.head.rotation.x = 0.4 * (1 - cu) + 0.1 * cu; } else { Ls.la.rotation.x = -0.9 * cu; Ls.ra.rotation.x = -0.9 * cu; Ls.la.rotation.z = 0.25 * cu; Ls.ra.rotation.z = -0.25 * cu; } }
 
   // --- city upgrade: buildings grow, trims glow, windows light at night ---
   const windowsOn = clamp(nt * 1.1 + cu * 0.12, 0, 1);
   for (const b of buildings) {
     const u = smooth((cu - b.delay) / 0.4); const sy = lerp(1, b.grow, u);
-    b.body.scale.y = sy; b.body.position.y = b.h * sy / 2; b.roof.position.y = b.h * sy + 0.17;
+    b.body.scale.y = sy; b.body.position.y = b.h * sy / 2; b.roof.position.y = b.h * sy + 0.17; for (const c of b.clutter) c.position.y = b.h * sy + 0.35 + c.geometry.parameters.height / 2;
     for (let k = 0; k < 4; k++) { b.trims[k].scale.y = sy; b.trims[k].position.y = b.h * sy / 2; b.trims[k].material.opacity = u * 0.85 * (0.45 + 0.55 * nt + 0.2); }
     b.trims[4].position.y = b.h * sy + 0.4; b.trims[4].material.opacity = u * 0.85 * (0.45 + 0.55 * nt + 0.2);
     b.mat.emissiveIntensity = windowsOn * 0.95; b.mat.emissive.set(0xffd9a0).lerp(tmpC.set(0xbfe6ff), cu * 0.45);
+    if (b.store) b.store.material.emissiveIntensity = 0.25 + 0.75 * nt;
   }
+  for (const p of platforms) { const u = smooth((cu - p.userData.delay) / 0.45); p.visible = u > 0; const d = p.userData; p.position.set(d.x, d.y * u + Math.sin(t * 0.6 + d.bob) * 0.4, d.z); p.scale.setScalar(Math.max(0.001, u)); }
   for (const h of lampHeads) h.material.color.set(nt > 0.2 ? 0xfff0c8 : 0x6a6f78).lerp(tmpC.set(0x7cf5ff), cu * 0.7 * (nt > 0.2 ? 1 : 0.3));
-  for (const tl of trafficLights) { const ph = frac(t / 8 + tl.phase); tl.lights.forEach((l, i) => { const on = i === (ph < 0.5 ? 2 : ph < 0.6 ? 1 : 0); l.material.color.set([0xff3b2f, 0xffc93c, 0x3bd35a][i]).multiplyScalar(on ? 1 : 0.18); }); }
-  // --- cars ---
+  updateTrafficLights(trafficLights, t, 1 - cu * 0.85);
+  // --- cars: drive the road, then lift into sky lanes ---
   for (const c of cars) {
     const d = c.userData; const lift = smooth((lu - d.liftDelay * 0.6) / 0.4);
     const speed = lerp(d.speed, d.speed * 1.8, lift); const x = ((d.x0 + d.dir * speed * t + 50) % 100 + 100) % 100 - 50;
     c.position.set(x, lerp(-0.5, d.skyY + Math.sin(t * 1.2 + d.bob) * 0.3, lift), lerp(d.laneZ, d.skyZ, lift));
     c.rotation.y = d.dir > 0 ? 0 : Math.PI; c.rotation.z = lift * Math.sin(t * 0.8 + d.bob) * 0.04;
     for (const w of d.wheels) { w.rotation.y = -t * speed * 3; w.visible = lift < 0.7; }
-    d.trail.material.opacity = lift * (0.3 + 0.4 * nt); d.under.material.opacity = lift * 0.55;
+    d.trail.material.opacity = lift * (0.3 + 0.4 * nt); d.under.material.opacity = lift * 0.55; d.tail.material.color.set(0xff3b2f).multiplyScalar(0.6 + 0.4 * nt); d.lights.material.color.set(0xfff2c0).multiplyScalar(0.4 + 0.6 * nt);
   }
 
   // --- holo screens & phone (24-33) ---
   for (const h of holos) { const on = win(t, 24.4 + h.delay, 32.6, 0.6, 0.7); h.m.visible = on > 0; if (!on) continue; h.m.position.set(h.x, h.y + Math.sin(t * 1.4 + h.bob) * 0.12, h.z); h.m.lookAt(camera.position); h.m.material.opacity = on * 0.92; h.m.scale.set(1, on, 1); }
   for (const ph of peopleHolos) { const on = win(t, 15 + ph.delay, 52.5, 0.6, 1.0) * cu; ph.m.visible = on > 0; if (!on) continue; tmpV.set(0, 1.5, 0.75).applyAxisAngle(UP, ph.s.g.rotation.y).add(ph.s.g.position); ph.m.position.copy(tmpV); ph.m.rotation.y = ph.s.g.rotation.y; ph.m.material.opacity = on * 0.85; }
   { const u = (t - 24.6) / 5.4; const on = u > 0 && u < 1 ? win(u, 0, 1, 0.1, 0.2) : 0; phone.visible = on > 0;
-    if (on) { const drop = smooth((u - 0.6) / 0.4); phone.position.set(1.35, 1.6 + Math.sin(t * 2) * 0.1 - drop * 1.6, 2.6); phone.rotation.set(drop * 1.6, t * 0.8, drop * 0.6); phone.scale.setScalar(on); phoneTag.position.set(1.1, 2.45 - drop * 0.5, 2.6); phoneTag.scale.set(2.4, 0.9, 1); phoneTag.material.opacity = on * (1 - drop); } else phoneTag.material.opacity = 0; }
+    if (on) { const drop = smooth((u - 0.6) / 0.4); phone.position.set(1.6, 1.4 + Math.sin(t * 2) * 0.1 - drop * 1.6, 2.6); phone.rotation.set(drop * 1.6, t * 0.8, drop * 0.6); phone.scale.setScalar(on); phoneTag.position.set(1.3, 2.25 - drop * 0.5, 2.6); phoneTag.scale.set(2.4, 0.9, 1); phoneTag.material.opacity = on * (1 - drop); } else phoneTag.material.opacity = 0; }
 
   // --- coins & photos (33-43.5) ---
-  for (const c of coins) { const u = (t - c.t0) / 2.4; c.m.visible = u > 0 && u < 1; if (!c.m.visible) continue; c.m.position.set(c.x, 7.0 - u * u * 7.2, c.z); c.m.rotation.set(t * c.spin, t * c.spin * 0.6, 0); c.m.material.color.copy(tmpC.set(0xffc93c).lerp(c.gray.color, smooth(u * 1.4))); c.m.material.emissiveIntensity = 1 - u; c.m.material.transparent = true; c.m.material.opacity = 1 - smooth((u - 0.7) / 0.3); }
-  for (const p of photos) { const u = (t - p.t0) / p.dur; p.m.visible = u > 0 && u < 1; if (!p.m.visible) continue; p.m.position.set(p.x + p.drift.x * u, 1.3 + p.drift.y * u, p.z + p.drift.z * u); p.m.rotation.set(u * p.rot, t * 0.8, u * p.rot * 0.5); p.m.material.opacity = win(u, 0, 1, 0.15, 0.5); p.m.material.color.setScalar(1 - u * 0.5); }
+  for (const c of coins) { const u = (t - c.t0) / 2.4; c.m.visible = u > 0 && u < 1; if (!c.m.visible) continue; c.m.position.set(c.x, 6.5 - u * u * 6.8, c.z); c.m.rotation.set(t * c.spin, t * c.spin * 0.6, 0); c.m.material.color.copy(tmpC.set(0xffc93c).lerp(c.gray.color, smooth(u * 1.4))); c.m.material.emissiveIntensity = 1 - u; c.m.material.transparent = true; c.m.material.opacity = 1 - smooth((u - 0.7) / 0.3); }
+  for (const p of photos) { const u = (t - p.t0) / p.dur; p.m.visible = u > 0 && u < 1; if (!p.m.visible) continue; p.m.position.set(p.x + p.drift.x * u, 1.0 + p.drift.y * u, p.z + p.drift.z * u); p.m.rotation.set(u * p.rot, t * 0.8, u * p.rot * 0.5); p.m.material.opacity = win(u, 0, 1, 0.15, 0.5); p.m.material.color.setScalar(1 - u * 0.5); }
 
   // --- helix & healing (43.5-52.5) ---
-  const hel = win(t, 43.7, 52.3, 1.3, 1.2); helix.visible = hel > 0; helix.rotation.y = t * 0.9; helix.scale.setScalar(Math.max(0.001, hel)); helix.position.y = 4.3 + Math.sin(t * 0.7) * 0.2;
+  const hel = win(t, 43.7, 52.3, 1.3, 1.2); helix.visible = hel > 0; helix.rotation.y = t * 0.9; helix.scale.setScalar(Math.max(0.001, hel)); helix.position.y = 3.9 + Math.sin(t * 0.7) * 0.2;
   helixLight.intensity = hel * 24; heal.material.opacity = hel * 0.9;
-  if (hel > 0) { for (let i = 0; i < healCount; i++) { const s = healSeed[i]; const life = frac(t * s.speed + s.phase); healPos[i * 3] = Math.sin(s.az + life * 1.5) * s.rad; healPos[i * 3 + 1] = 0.4 + life * 6.2; healPos[i * 3 + 2] = Math.cos(s.az + life * 1.5) * s.rad * 0.7; } healGeo.attributes.position.needsUpdate = true; }
-  { const on = win(t, 48.6, 52.0, 0.6, 0.8); yearTag.material.opacity = on; yearTag.position.set(0, 7.6 + (1 - on) * 0.4, 0); yearTag.scale.set(4.4, 1.65, 1); }
+  if (hel > 0) { for (let i = 0; i < healCount; i++) { const s = healSeed[i]; const life = frac(t * s.speed + s.phase); healPos[i * 3] = Math.sin(s.az + life * 1.5) * s.rad; healPos[i * 3 + 1] = 0.2 + life * 6.0; healPos[i * 3 + 2] = 0.6 + Math.cos(s.az + life * 1.5) * s.rad * 0.7; } healGeo.attributes.position.needsUpdate = true; }
+  { const on = win(t, 48.6, 52.0, 0.6, 0.8); yearTag.material.opacity = on; yearTag.position.set(0, 7.2 + (1 - on) * 0.4, 0.6); yearTag.scale.set(4.4, 1.65, 1); }
   for (const s of shooters) { const u = (t - s.t0) / 1.1; s.m.visible = u > 0 && u < 1; if (!s.m.visible) continue; s.m.position.set(s.x0 + s.dx * u, s.y0 + s.dy * u, -110); s.m.rotation.z = Math.atan2(s.dy, s.dx); s.m.material.opacity = win(u, 0, 1, 0.2, 0.5) * 0.9; }
 
-  // --- camera ---
   camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.15, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.08, kf(t, CAM.z));
-  camera.lookAt(0, kf(t, CAM.ty), 0);
+  camera.lookAt(0, kf(t, CAM.ty), 0.6);
   renderer.render(scene, camera);
   overlay.update(t); updateHud(t);
   return true;

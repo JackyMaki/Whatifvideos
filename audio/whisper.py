@@ -55,7 +55,8 @@ def loud_whisper(x, sr, mix=0.72):
     y = w * mix + voiced * (1 - mix) * 0.9
     # close-mic character: a little proximity low end, presence lift, soften the very top
     y = y + 0.25 * sosfilt(butter(2, [90, 220], "band", fs=sr, output="sos"), voiced)
-    y = y + 0.35 * sosfilt(butter(2, [2500, 5500], "band", fs=sr, output="sos"), y)
+    y = y + 0.45 * sosfilt(butter(2, [2200, 5200], "band", fs=sr, output="sos"), y)
+    y = np.tanh(y * 1.6) / 1.6                       # soft saturation: closer, louder, no clipping
     y = sosfilt(butter(4, 9000, "low", fs=sr, output="sos"), y)
     y /= (np.abs(y).max() + 1e-9) / 0.85
     return y
