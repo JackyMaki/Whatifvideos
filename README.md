@@ -48,7 +48,7 @@ re-render of a single second is just `--preview`.
 * Cities are laid out, not scattered: lamps and trees on the kerbs at regular spacing, traffic lights at
   the crosswalk, shop fronts with awnings and signs on the row across the street, pedestrians on lanes
   with fixed spacing so nobody walks through anyone.
-* Narration is a close-mic "loud whisper": the Kokoro voice run through `audio/whisper.py`.
+* Narration is the plain Kokoro `am_onyx` voice, calm and natural (the whisper filter in `audio/whisper.py` is kept but unused).
 
 ## Rebuild
 
