@@ -1,0 +1,17 @@
+{
+  "title": "What if the zombie apocalypse happened?",
+  "output": "what_if_zombie_apocalypse_9x16.mp4",
+  "poster_time": 38,
+  "voice": "en-us-ryan-high",
+  "engine": "piper",
+  "length_scale": 1.1,
+  "lines": [
+    {"id": 1, "start": 0.8,  "text": "What if the zombie apocalypse happened?"},
+    {"id": 2, "start": 6.0,  "text": "It starts at sunrise. One bite in a crowded city. By the time the news catches up, the infected have doubled, and doubled again."},
+    {"id": 3, "start": 15.0, "text": "By morning, the roads are jammed. Nobody leaves the city by car, and the sidewalks are the most dangerous place on Earth."},
+    {"id": 4, "start": 24.0, "text": "By noon, the power grid fails. No phones, no water, no help coming. Your best weapon is a locked door."},
+    {"id": 5, "start": 33.0, "text": "By sunset, the city is theirs. Nine in ten people are gone. The survivors are the ones who stayed quiet, and stayed high."},
+    {"id": 6, "start": 43.5, "text": "But at night, the real enemy isn't the dead. It's hunger, thirst, and other survivors. Most groups fall apart in the first week."},
+    {"id": 7, "start": 52.5, "text": "So, where would you go first? The rooftop, or the supermarket?"}
+  ]
+}

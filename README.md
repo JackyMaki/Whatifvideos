@@ -9,6 +9,7 @@ tweaked by editing a few files, and a new episode is a new folder under `videos/
 | Slug | Video | Poster | Notes |
 |------|-------|--------|-------|
 | `brain_100_percent` | `output/brain_100_percent/what_if_100_percent_brain_9x16.mp4` | `output/brain_100_percent/poster.jpg` | A floating brain lights up as the day passes: learning, recall, hunger, a midnight storm, calm. |
+| `zombie_apocalypse` | `output/zombie_apocalypse/what_if_zombie_apocalypse_9x16.mp4` | `output/zombie_apocalypse/poster.jpg` | One bite at sunrise; a survivor climbs to a rooftop while the city panics, the power fails, the infected take the streets, and night brings a barrel fire and a hard question. |
 | `future_100_years` | `output/future_100_years/what_if_woke_up_100_years_future_9x16.mp4` | `output/future_100_years/poster.jpg` | A sleeper wakes in a city plaza in 2126: buildings grow and light up, cars lift into sky lanes, holo screens, worthless coins, a DNA helix, back to sleep. |
 
 Every episode is 1080×1920 (9:16), exactly 60 s at 30 fps, H.264 + AAC, loudness-normalised to
@@ -21,6 +22,7 @@ scene-by-scene breakdown.
 render/common.js            shared world: deterministic helpers, sky/sun/moon/stars, terrain, mountains,
                             trees, clouds, the day cycle, caption/clock/title overlay
 render/render_frames.js     Playwright + headless Chromium frame renderer (parallel workers)
+render/city.js              street-level city kit: plaza/road, textured buildings, lamps, blocky people, cars
 render/lib/                 vendored three.js (MIT)
 audio/make_narration.py     espeak-ng + MBROLA voice, EQ, loudness, timeline placement
 audio/synth.py              tiny numpy synth (pads, plucks, arpeggios, drones, reverb)

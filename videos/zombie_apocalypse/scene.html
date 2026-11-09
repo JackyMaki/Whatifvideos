@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What if the zombie apocalypse happened — street-level low poly scene</title>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="ui">
+  <div id="title" class="abs">What if the <em>zombie apocalypse</em> happened?</div>
+  <div id="hud" class="abs"><div id="hudLabel" class="label">Infected</div><div id="hudValue">0%</div><div id="hudSub" class="label">06:00 · Sunrise</div></div>
+  <div id="cap" class="abs"><div id="capInner"></div></div>
+  <div id="footer" class="abs">A what‑if, every day</div>
+</div>
+
+<script type="module">
+import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+import { lam, glowMat, solid, buildStreets, buildBuildings, buildStreetFurniture, updateTrafficLights, person, animateGait, buildCars } from '../../render/city.js';
+injectBaseCss();
+
+const world = createWorld({ seed: 666, canvas: document.getElementById('c'), ground: 'none', shadows: true, shadowExtent: 34, fog: 0.014, clouds: 9 });
+const { rng, R, renderer, scene, camera, hemi, sunLight } = world;
+const SKY = { ...DAY,
+  SKY: {
+    top: [[0, '#3a4f7e'], [7, '#5f9be0'], [24, '#4f8fdc'], [34, '#5a5f9e'], [39, '#4a3a7a'], [44, '#1b1f4a'], [49, '#080a1c'], [60, '#06081a']],
+    mid: [[0, '#9a7aa6'], [7, '#a9cdf0'], [24, '#a6cdf2'], [34, '#c89ab0'], [39, '#ff8a5a'], [44, '#5a3d4e'], [49, '#2a1a2c'], [60, '#2a1a2c']],
+    bot: [[0, '#f0a878'], [7, '#dde9f3'], [24, '#e2eef6'], [34, '#ffc89a'], [39, '#ff6a3d'], [44, '#7a3d3a'], [49, '#4a2420'], [60, '#4a2420']],
+  },
+  hemiSky: [[0, '#8a7ab8'], [7, '#bfd8ff'], [34, '#e0b0b0'], [44, '#4a4060'], [60, '#403650']],
+  hemiGround: [[0, '#4a3a3a'], [7, '#55565a'], [44, '#2a2024'], [60, '#261c20']] };
+
+// ---------------------------------------------------------------------------
+// Timeline
+// ---------------------------------------------------------------------------
+const OUTBREAK = 6.6;
+const infected = t => kf(t, [[OUTBREAK, 0], [8.5, 0.012], [15, 0.11], [24, 0.36], [33, 0.7], [43.5, 0.92], [60, 0.95]]);
+const panic = t => kf(t, [[8.0, 0], [10.5, 1]]);
+const jam = t => kf(t, [[14.5, 0], [17.5, 1]]);
+const power = t => kf(t, [[24.2, 1], [24.8, 0.25], [25.3, 1], [25.9, 0.1], [26.4, 0.6], [27.0, 0]]);
+const fires = t => kf(t, [[26, 0], [34, 0.6], [44, 1], [60, 1]]);
+
+// ---------------------------------------------------------------------------
+// City
+// ---------------------------------------------------------------------------
+buildStreets(world);
+const buildings = buildBuildings(world, { nearHeights: [4.5, 9], sideHeights: [5, 8.5] });
+const { lampHeads, trafficLights } = buildStreetFurniture(world);
+const cars = buildCars(world, 13);
+// the hero's rooftop: the left-side building nearest the plaza centre
+const roofB = buildings.filter(b => b.side === -1).sort((a, b) => Math.abs(a.z - 1.5) - Math.abs(b.z - 1.5))[0];
+const ROOF_Y = roofB.h - 0.5 + 0.35, LADDER_X = roofB.x + roofB.w / 2 + 0.18;
+for (let y = 0.2; y < roofB.h; y += 0.5) { const rung = solid(new THREE.BoxGeometry(0.08, 0.08, 0.7), lam(0x3a3f48)); rung.position.set(LADDER_X, y - 0.5, roofB.z); scene.add(rung); }
+for (const dz of [-0.35, 0.35]) { const rail = solid(new THREE.BoxGeometry(0.08, roofB.h + 0.8, 0.08), lam(0x3a3f48)); rail.position.set(LADDER_X, roofB.h / 2 - 0.1, roofB.z + dz); scene.add(rail); }
+const hut = solid(new THREE.BoxGeometry(1.8, 2.2, 1.8), lam(0x8a8580)); hut.position.set(roofB.x - roofB.w * 0.22, ROOF_Y + 1.1, roofB.z + roofB.d * 0.22); scene.add(hut);
+const door = solid(new THREE.BoxGeometry(0.8, 1.7, 0.08), lam(0x4a3a2e)); door.position.set(hut.position.x, ROOF_Y + 0.85, hut.position.z - 0.92); scene.add(door);
+for (let i = 0; i < 4; i++) { const crate = solid(new THREE.BoxGeometry(0.7, 0.6, 0.7), lam(0x9a7a4e)); crate.position.set(roofB.x + roofB.w * 0.3 - i * 0.5, ROOF_Y + 0.3 + (i === 3 ? 0.6 : 0), roofB.z - roofB.d * 0.3 + (i % 2) * 0.6); crate.rotation.y = i * 0.4; scene.add(crate); }
+// barrel fire on the roof
+const barrel = solid(new THREE.CylinderGeometry(0.42, 0.38, 1.0, 10), lam(0x55504a)); barrel.position.set(roofB.x, ROOF_Y + 0.5, roofB.z - 0.6); scene.add(barrel);
+const flame = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.0, 6), glowMat(0xff8a3d, 0)); flame.position.set(barrel.position.x, ROOF_Y + 1.45, barrel.position.z); scene.add(flame);
+const flameGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xff9a4a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); flameGlow.scale.setScalar(3.5); flameGlow.position.copy(flame.position); scene.add(flameGlow);
+const fireLight = new THREE.PointLight(0xff9a4a, 0, 18, 1.6); fireLight.position.set(barrel.position.x, ROOF_Y + 1.8, barrel.position.z); scene.add(fireLight);
+// supermarket sign on the building across the street nearest x = 4
+const signB = buildings.filter(b => Math.abs(b.z + 24) < 7 && b.z < -17).sort((a, b) => Math.abs(a.x - 4) - Math.abs(b.x - 4))[0];
+function signTexture() { const c = document.createElement('canvas'); c.width = 1024; c.height = 256; const g = c.getContext('2d'); g.fillStyle = '#1b1b22'; g.fillRect(0, 0, 1024, 256); g.fillStyle = '#ff3b2f'; g.font = '700 150px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('SUPERMARKET', 512, 132); const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex; }
+const signMat = new THREE.MeshLambertMaterial({ map: signTexture(), emissiveMap: signTexture(), emissive: 0xffffff, emissiveIntensity: 0.2 });
+const sign = solid(new THREE.BoxGeometry(Math.min(signB.w - 0.6, 6.5), Math.min(signB.w - 0.6, 6.5) / 4, 0.25), signMat); sign.position.set(signB.x, Math.min(signB.h - 1.2, 4.2), signB.z + signB.d / 2 + 0.15); scene.add(sign);
+const awning = solid(new THREE.BoxGeometry(Math.min(signB.w - 0.4, 7), 0.12, 1.4), lam(0xb83a30)); awning.position.set(signB.x, 2.4, signB.z + signB.d / 2 + 0.7); scene.add(awning);
+
+// ---------------------------------------------------------------------------
+// People: walkers, standers, a late crowd of zombies gathering under the roof
+// ---------------------------------------------------------------------------
+const ZSKIN = new THREE.Color(0x8fa37a), ZSHIRT = new THREE.Color(0x3a3f3a), ZPANTS = new THREE.Color(0x2a2a2a);
+const people = [];
+function addPerson(spec) { const g = person(world); scene.add(g); const mats = g.userData.mats; people.push({ g, ...spec, base: { skin: mats.skin.color.clone(), shirt: mats.shirt.color.clone(), pants: mats.pants.color.clone() }, rank: spec.rank ?? R(0.03, 1), ph: R(0, 6.28) }); return people[people.length - 1]; }
+for (let i = 0; i < 12; i++) addPerson({ kind: 'x', z: -16.1 + R(-0.5, 0.5), dir: i % 2 ? 1 : -1, speed: R(0.9, 1.5), phase: R(-40, 40) });
+for (let i = 0; i < 10; i++) addPerson({ kind: 'x', z: -6.9 + R(-0.5, 0.5), dir: i % 2 ? 1 : -1, speed: R(0.9, 1.5), phase: R(-40, 40) });
+for (let i = 0; i < 8; i++) addPerson({ kind: 'z', x: (i % 2 ? 1 : -1) * (8.6 + R(-0.5, 0.5)), dir: i < 4 ? 1 : -1, speed: R(0.8, 1.3), phase: R(-14, 12) });
+for (const [x, z, ry] of [[-4.6, 3.2, 0.6], [4.8, 2.6, -0.8], [-3.2, -4.2, 2.4], [5.6, -3.4, -2.6], [-6.8, 0.4, 1.2], [3.0, 5.6, 2.9], [2.2, -1.5, 1.8]]) addPerson({ kind: 'stand', x, z, ry, flee: R(0, 1) < 0.5 ? -1 : 1 });
+// patient zero: a stander on the far sidewalk right across the plaza
+const zero = addPerson({ kind: 'stand', x: -1.2, z: -15.6, ry: 0.2, rank: -1, flee: 0 }); zero.zero = true;
+// gathering crowd (spawns from 28 s, shambles toward the hero's building)
+const crowd = [];
+for (let i = 0; i < 16; i++) { const g = person(world, { skin: 0x8fa37a, shirt: 0x3a3f3a, pants: 0x2a2a2a }); g.visible = false; scene.add(g); crowd.push({ g, t0: 28 + i * 0.9 + R(0, 0.6), from: new THREE.Vector3(R(-6, 12), -0.5, R(-14, 8)), ph: R(0, 6.28), speed: R(0.25, 0.4) }); }
+
+// ---------------------------------------------------------------------------
+// Hero
+// ---------------------------------------------------------------------------
+const hero = person(world, { skin: 0xf1c27d, shirt: 0x5d6b4a, pants: 0x2b3a55, hair: 0x2a1a0e }); scene.add(hero);
+const pack = solid(new THREE.BoxGeometry(0.5, 0.6, 0.25), lam(0x8a3a2e)); pack.position.set(0, 1.2, -0.3); hero.add(pack);
+const survivors = [0, 1].map(i => { const g = person(world); scene.add(g); return { g, ph: R(0, 6.28), i }; });
+// smoke columns: distant fires + the burning car
+const smokeCols = [];
+function addSmoke(pos, count, spread, rise, size, color) {
+  const posArr = new Float32Array(count * 3); const seeds = []; for (let i = 0; i < count; i++) seeds.push({ phase: rng(), az: R(0, 6.28), rad: R(0, spread), speed: R(0.08, 0.16), wob: R(0, 6.28) });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color, size, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, map: radialTexture([[0, 'rgba(255,255,255,0.8)'], [0.5, 'rgba(255,255,255,0.3)'], [1, 'rgba(255,255,255,0)']]), alphaTest: 0.01 }));
+  scene.add(pts); smokeCols.push({ pts, posArr, seeds, pos, rise, spread }); return pts;
+}
+const fireB = buildings.filter(b => b.z < -30 && b.z > -50).sort((a, b) => a.rank - b.rank).slice(0, 3);
+for (const b of fireB) addSmoke(new THREE.Vector3(b.x, b.h - 0.5, b.z), 60, 2.5, 18, 6.5, 0x5a5a60);
+const burnCar = cars[3];
+addSmoke(new THREE.Vector3(0, 0.6, burnCar.userData.laneZ), 50, 0.8, 9, 3.5, 0x4a4a50);
+const carFlame = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.6, 6), glowMat(0xff8a3d, 0)); scene.add(carFlame);
+const carGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xff9a4a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); carGlow.scale.setScalar(5); scene.add(carGlow);
+const carLight = new THREE.PointLight(0xff8a3d, 0, 20, 1.6); scene.add(carLight);
+const moonLamp = new THREE.PointLight(0x9fb4ff, 0, 30, 1.4); moonLamp.position.set(roofB.x + 3, ROOF_Y + 7, roofB.z + 5); scene.add(moonLamp);
+
+// ---------------------------------------------------------------------------
+// Camera (position + target keyframes) & overlay
+// ---------------------------------------------------------------------------
+const RX = roofB.x, RZ = roofB.z, RY = ROOF_Y, HX = hut.position.x, HZ = hut.position.z, BX = barrel.position.x, BZ = barrel.position.z;
+const CAM = {
+  x: [[0, 0.5], [6, 1.6], [12.5, 1.6], [14.5, -2.5], [17.5, RX + 4.6], [23, RX + 4.2], [24.5, HX + 3.4], [31.5, HX + 3.2], [33.5, RX + 4.5], [42.5, RX + 4.0], [44, BX + 4.2], [52, BX + 4.0], [53.5, RX + 2.4], [60, RX + 2.0]],
+  y: [[0, 2.8], [6, 2.3], [12.5, 2.4], [14.5, 3.4], [17.5, RY + 6.0], [23, RY + 5.6], [24.5, RY + 2.3], [31.5, RY + 2.3], [33.5, RY + 4.5], [42.5, RY + 4.0], [44, RY + 2.7], [52, RY + 2.6], [53.5, RY + 2.4], [60, RY + 2.6]],
+  z: [[0, 14.5], [6, 9.5], [12.5, 9.0], [14.5, 9.5], [17.5, RZ + 7.5], [23, RZ + 7.0], [24.5, HZ + 3.8], [31.5, HZ + 3.6], [33.5, RZ + 7.5], [42.5, RZ + 6.5], [44, BZ + 4.6], [52, BZ + 4.4], [53.5, RZ + 3.4], [60, RZ + 3.0]],
+  tx: [[0, 0.4], [6, 0.2], [12.5, -1.0], [14.5, -7], [17.5, RX - 1.0], [23, RX - 1.0], [24.5, HX + 0.7], [31.5, HX + 0.7], [33.5, 0], [42.5, 0], [44, BX], [52, BX], [53.5, signB.x * 0.6], [60, signB.x * 0.7]],
+  ty: [[0, 1.5], [6, 1.5], [12.5, 1.6], [14.5, 2.5], [17.5, RY - 4.5], [23, RY - 4.5], [24.5, RY + 1.0], [31.5, RY + 1.0], [33.5, 0.5], [42.5, 0.5], [44, RY + 0.9], [52, RY + 0.9], [53.5, 3.6], [60, 3.8]],
+  tz: [[0, -2], [6, -3], [12.5, -4], [14.5, -2], [17.5, RZ - 14], [23, RZ - 14], [24.5, HZ - 0.6], [31.5, HZ - 0.6], [33.5, -10], [42.5, -10], [44, BZ], [52, BZ], [53.5, signB.z], [60, signB.z]],
+};
+const overlay = createOverlay({ highlight: /(one bite|doubled, and doubled again|roads are jammed|most dangerous place on earth|power grid fails|a locked door|the city is theirs|nine in ten people are gone|stayed quiet, and stayed high|isn't the dead|other survivors|the first week|the rooftop|the supermarket)/gi });
+const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
+function updateHud(t) {
+  const f = infected(t) * 100;
+  hud.value.textContent = f <= 0 ? '0%' : f < 1 ? `${f.toFixed(1)}%` : f < 10 ? `${f.toFixed(1)}%` : `${Math.round(f)}%`;
+  hud.value.style.color = f > 50 ? '#ff6a5a' : '#fff';
+  hud.label.textContent = t >= 43.5 ? 'Infected · day one' : 'Infected';
+}
+
+// ---------------------------------------------------------------------------
+// Per-frame update
+// ---------------------------------------------------------------------------
+const tmpV = new THREE.Vector3(), tmpC = new THREE.Color(), tgt = new THREE.Vector3();
+function heroPose(t) {
+  // returns { pos, ry, mode, phase }
+  if (t < 13) { const s = smooth((t - 9.0) / 1.2); return { pos: new THREE.Vector3(0.4 + s * 0.8, -0.5, 1.8 + s * 1.2), ry: lerp(Math.PI, Math.PI * 0.75, s), mode: 'idle', phoneUp: t < 9.5 }; }
+  if (t < 15.2) { const u = smooth((t - 13) / 2.2); return { pos: new THREE.Vector3(lerp(1.2, LADDER_X + 0.5, u), -0.5, lerp(3.0, RZ, u)), ry: -Math.PI / 2 + 0.3, mode: 'run', phase: t * 14 }; }
+  if (t < 17.4) { const u = (t - 15.2) / 2.2; return { pos: new THREE.Vector3(LADDER_X + 0.45, lerp(-0.5, RY + 0.05, u), RZ), ry: -Math.PI / 2, mode: 'climb', phase: t * 7 }; }
+  if (t < 18.4) { const u = smooth((t - 17.4) / 1.0); return { pos: new THREE.Vector3(lerp(LADDER_X + 0.45, RX + roofB.w * 0.25, u), RY, lerp(RZ, RZ - roofB.d / 2 + 1.3, u)), ry: lerp(-Math.PI / 2, Math.PI, u), mode: 'walk', phase: t * 9 };}
+  if (t < 24.5) return { pos: new THREE.Vector3(RX + roofB.w * 0.25, RY, RZ - roofB.d / 2 + 1.3), ry: Math.PI, mode: 'idle' };
+  if (t < 33.5) { const u = smooth((t - 24.5) / 1.6); return { pos: new THREE.Vector3(lerp(RX + roofB.w * 0.25, hut.position.x + 1.2, u), RY, lerp(RZ - roofB.d / 2 + 1.3, hut.position.z - 0.6, u)), ry: lerp(Math.PI, Math.PI * 0.5, u), mode: u < 1 ? 'walk' : 'idle', phase: t * 9 }; }
+  if (t < 44) { const u = smooth((t - 33.5) / 1.6); return { pos: new THREE.Vector3(lerp(hut.position.x + 1.2, RX + roofB.w * 0.2, u), RY, lerp(hut.position.z - 0.6, RZ - roofB.d / 2 + 1.0, u)), ry: lerp(Math.PI * 0.5, Math.PI, u), mode: u < 1 ? 'walk' : 'idle', phase: t * 9, lookDown: true }; }
+  if (t < 53.5) { const u = smooth((t - 44) / 1.4); return { pos: new THREE.Vector3(lerp(RX + roofB.w * 0.2, BX + 1.4, u), RY, lerp(RZ - roofB.d / 2 + 1.0, BZ - 1.2, u)), ry: lerp(Math.PI, Math.PI * 0.75, u), mode: u < 1 ? 'walk' : 'idle', phase: t * 9 }; }
+  const u = smooth((t - 53.5) / 1.4); return { pos: new THREE.Vector3(lerp(BX + 1.4, RX + 0.9, u), RY, lerp(BZ - 1.2, RZ - roofB.d / 2 + 1.0, u)), ry: lerp(Math.PI * 0.75, Math.PI + 0.3, u), mode: u < 1 ? 'walk' : 'idle', phase: t * 9, lookDown: true };
+}
+function poseLimbs(g, p, t) {
+  const L = g.userData.limbs; g.position.copy(p.pos); g.rotation.y = p.ry;
+  if (p.mode === 'run' || p.mode === 'walk') animateGait(g, p.phase, p.mode);
+  else if (p.mode === 'climb') { const sw = Math.sin(p.phase) * 0.6; L.ll.rotation.x = -0.6 + sw; L.rl.rotation.x = -0.6 - sw; L.la.rotation.x = -2.6 + sw * 0.5; L.ra.rotation.x = -2.6 - sw * 0.5; L.la.rotation.z = 0; L.ra.rotation.z = 0; g.userData.torso.rotation.x = 0; L.head.rotation.x = -0.4; L.head.rotation.z = 0; }
+  else { const idle = Math.sin(t * 1.4) * 0.04; L.ll.rotation.x = 0; L.rl.rotation.x = 0; L.la.rotation.x = p.phoneUp ? -1.3 : idle; L.ra.rotation.x = p.phoneUp ? -0.3 : -idle; L.la.rotation.z = p.phoneUp ? 0.5 : 0; L.ra.rotation.z = 0; g.userData.torso.rotation.x = 0; L.head.rotation.x = p.phoneUp ? 0.5 : p.lookDown ? 0.45 : 0; L.head.rotation.z = 0; }
+}
+window.renderAt = function (t) {
+  const { nt } = world.updateEnvironment(t, SKY);
+  sunLight.position.set(lerp(-34, 30, clamp(t / 40, 0, 1)), lerp(20, 34, Math.sin(clamp(t / 40, 0, 1) * Math.PI)), 18);
+  const pw = power(t), inf = infected(t), pn = panic(t), jm = jam(t), fr = fires(t);
+  moonLamp.intensity = nt * 55;
+
+  // --- buildings: windows need power; a few far buildings burn ---
+  const windowsOn = clamp(nt * 1.1, 0, 1) * pw;
+  for (const b of buildings) { b.mat.emissiveIntensity = windowsOn * 0.95; b.mat.emissive.set(0xffd9a0); }
+  for (let i = 0; i < fireB.length; i++) { const b = fireB[i]; const fl = fr * (0.7 + 0.3 * Math.sin(t * 9 + i * 2) * Math.sin(t * 13.7 + i)); b.mat.emissive.set(0xff6a2a); b.mat.emissiveIntensity = fl * 1.2; }
+  for (const h of lampHeads) h.material.color.set(nt > 0.2 && pw > 0.5 ? 0xfff0c8 : 0x6a6f78);
+  updateTrafficLights(trafficLights, t, pw);
+  signMat.emissiveIntensity = (0.3 + 0.9 * nt) * (pw > 0.5 ? 1 : 0.5 + 0.2 * Math.sin(t * 23) * Math.sin(t * 5.1));
+
+  // --- cars: drive, then jam; one burns at sunset ---
+  const S = t < 14.5 ? t : t < 17.5 ? 14.5 + (t - 14.5) - (t - 14.5) * (t - 14.5) / 6 : 16.0;
+  for (let i = 0; i < cars.length; i++) {
+    const c = cars[i], d = c.userData; const x = ((d.x0 + d.dir * d.speed * S + 50) % 100 + 100) % 100 - 50;
+    c.position.set(x + (jm > 0.99 && d.rank < 0.3 ? 0 : 0), -0.5, d.laneZ + (jm * (d.rank < 0.25 ? (d.rank - 0.12) * 6 : 0)));
+    c.rotation.y = (d.dir > 0 ? 0 : Math.PI) + jm * (d.rank < 0.25 ? (d.rank - 0.12) * 2.5 : 0);
+    for (const w of d.wheels) w.rotation.y = -S * d.speed * 3;
+    const hazard = jm > 0.99 && pw > 0.5 && frac(t + d.bob) < 0.5;
+    d.tail.material.color.set(hazard ? 0xffb020 : 0xff3b2f).multiplyScalar(hazard ? 1.4 : 0.6 + 0.4 * nt); d.lights.material.color.set(0xfff2c0).multiplyScalar((0.4 + 0.6 * nt) * (pw > 0.5 || !hazard ? 1 : 0.3));
+  }
+  const burn = win(t, 32.5, 61, 2.5, 0.1); const flick = 0.7 + 0.3 * Math.sin(t * 17) * Math.sin(t * 7.3);
+  carFlame.position.set(burnCar.position.x, 1.3 + flick * 0.2, burnCar.position.z); carFlame.material.opacity = burn * 0.9 * flick; carFlame.scale.set(1, 0.8 + flick * 0.5, 1);
+  carGlow.position.copy(carFlame.position); carGlow.material.opacity = burn * 0.6 * flick; carLight.position.copy(carFlame.position).y += 1; carLight.intensity = burn * 40 * flick;
+  burnCar.userData.body.material.color.set(0x1a1a1a).lerp(tmpC.set(0xc0392b), 1 - burn);
+  smokeCols[3].pos.set(burnCar.position.x, 0.8, burnCar.position.z);
+  for (let k = 0; k < smokeCols.length; k++) {
+    const s = smokeCols[k]; const on = k < 3 ? fr : burn; s.pts.material.opacity = on * 0.55;
+    if (on > 0) { for (let i = 0; i < s.seeds.length; i++) { const sd = s.seeds[i]; const life = frac(t * sd.speed + sd.phase); const r = sd.rad * (0.4 + life * 1.6); s.posArr[i * 3] = s.pos.x + Math.sin(sd.az + life) * r + life * 3; s.posArr[i * 3 + 1] = s.pos.y + life * s.rise; s.posArr[i * 3 + 2] = s.pos.z + Math.cos(sd.az + life) * r; } s.pts.geometry.attributes.position.needsUpdate = true; }
+  }
+
+  // --- people: walk, then panic-run, then turn one by one ---
+  for (const p of people) {
+    const g = p.g; const turn = p.zero ? smooth((t - OUTBREAK) / 1.6) : clamp((inf - p.rank) / 0.03, 0, 1);
+    const m = g.userData.mats; m.skin.color.copy(p.base.skin).lerp(ZSKIN, turn); m.shirt.color.copy(p.base.shirt).lerp(ZSHIRT, turn * 0.8); m.pants.color.copy(p.base.pants).lerp(ZPANTS, turn * 0.6);
+    const zombie = turn > 0.5;
+    if (p.kind === 'stand') {
+      if (!zombie) { const fleeing = pn * (p.flee ? 1 : 0); const dx = p.flee * fleeing * 9 * smooth((t - 8) / 2.5); g.position.set(p.x + dx, -0.5, p.z); g.rotation.y = fleeing > 0.1 ? (p.flee > 0 ? Math.PI / 2 : -Math.PI / 2) : p.ry; if (fleeing > 0.1) animateGait(g, t * 13 + p.ph, 'run'); else animateGait(g, t * 2 + p.ph, 'walk', 0.08); }
+      else { const sh = (t - 8) * 0.3; const dir = Math.atan2(RX - g.position.x, (RZ) - g.position.z); g.position.set(g.position.x, -0.5, g.position.z); g.rotation.y = p.zero ? Math.PI : dir; animateGait(g, t * 3 + p.ph, 'shamble'); }
+    } else {
+      const speed = zombie ? p.speed * 0.3 : p.speed * (1 + pn * 1.6); const s = p.speed * (p.kind === 'x' ? 0 : 0) + p.phase + speed * t;
+      if (p.kind === 'x') { const x = ((s * p.dir + 50) % 100 + 100) % 100 - 50; g.position.set(x, -0.5, p.z); g.rotation.y = p.dir > 0 ? Math.PI / 2 : -Math.PI / 2; }
+      else { const z = ((s * p.dir + 16) % 30 + 30) % 30 - 16; g.position.set(p.x, -0.5, z); g.rotation.y = p.dir > 0 ? 0 : Math.PI; }
+      animateGait(g, t * (zombie ? 3 : 7 * speed * 0.8) + p.ph, zombie ? 'shamble' : pn > 0.5 ? 'run' : 'walk');
+    }
+  }
+  for (const c of crowd) {
+    const u = t - c.t0; c.g.visible = u > 0; if (u <= 0) continue;
+    const to = new THREE.Vector3(LADDER_X + 1.2 + Math.sin(c.ph) * 1.6, -0.5, RZ + Math.cos(c.ph) * 1.8); const k = clamp(u * c.speed / c.from.distanceTo(to) * 2, 0, 1);
+    c.g.position.lerpVectors(c.from, to, k); c.g.rotation.y = Math.atan2(to.x - c.from.x, to.z - c.from.z); animateGait(c.g, t * 3 + c.ph, 'shamble', k < 1 ? 1 : 0.4);
+  }
+
+  // --- hero & survivors ---
+  poseLimbs(hero, heroPose(t), t);
+  for (const sv of survivors) {
+    const onRoof = t > 17.5; sv.g.visible = onRoof;
+    if (sv.i === 0) { const leave = smooth((t - 48) / 3.5); sv.g.position.set(lerp(BX - 1.3, LADDER_X + 0.4, leave), RY - leave * (leave > 0.98 ? roofB.h : 0), lerp(BZ - 0.6, RZ, leave)); sv.g.rotation.y = leave > 0.02 ? -Math.PI / 2 : Math.PI * 0.2; if (leave > 0.02 && leave < 0.98) animateGait(sv.g, t * 9, 'walk'); else animateGait(sv.g, t * 1.5 + sv.ph, 'walk', 0.06); sv.g.visible = onRoof && leave < 0.99; }
+    else { sv.g.position.set(BX - 0.2, RY, BZ + 1.3); sv.g.rotation.y = Math.PI; animateGait(sv.g, t * 1.5 + sv.ph, 'walk', 0.06); }
+  }
+  const fireOn = win(t, 40, 61, 2.5, 0.1); const ff = 0.75 + 0.25 * Math.sin(t * 15) * Math.sin(t * 6.1);
+  flame.material.opacity = fireOn * 0.9 * ff; flame.scale.set(1, 0.8 + ff * 0.4, 1); flameGlow.material.opacity = fireOn * 0.55 * ff; fireLight.intensity = fireOn * 26 * ff;
+
+  // --- camera ---
+  camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.12, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.06, kf(t, CAM.z));
+  camera.lookAt(kf(t, CAM.tx), kf(t, CAM.ty), kf(t, CAM.tz));
+  renderer.render(scene, camera);
+  overlay.update(t); updateHud(t);
+  return true;
+};
+window.renderAt(0);
+window.__sceneReady = true;
+</script>
+</body>
+</html>
