@@ -24,6 +24,7 @@ def synth(text, raw):
             sys.exit(f"missing voice model {model}; run audio/get_voices.sh")
         subprocess.run([sys.executable, "-m", "piper", "-m", str(model), "-c", str(model) + ".json",
                         "--length-scale", str(spec.get("length_scale", 1.0)), "--sentence-silence", "0.25",
+                        "--noise-scale", str(spec.get("noise_scale", 0.667)), "--noise-w", str(spec.get("noise_w", 0.8)),
                         "-f", str(raw), "--", text], check=True, capture_output=True)
     else:
         subprocess.run(["espeak-ng", "-v", voice, "-s", str(speed), "-p", "40", "-a", "170", "-w", str(raw), text], check=True)
@@ -38,7 +39,9 @@ for i, line in enumerate(spec["lines"]):
     synth(line["text"], raw)
     # resample to 48k mono, gentle EQ + compression, loudness-match every line
     clean = OUT / f"line{line['id']}.wav"
-    eq = ("highpass=f=80,acompressor=threshold=-18dB:ratio=2.5:attack=10:release=150," if engine == "piper" else
+    pitch = spec.get("pitch", 1.0)  # <1 = deeper, calmer; duration is kept
+    shift = f"asetrate=22050*{pitch},aresample=22050,atempo={1/pitch:.4f}," if engine == "piper" and pitch != 1.0 else ""
+    eq = (shift + "highpass=f=80,lowpass=f=8500,acompressor=threshold=-20dB:ratio=3:attack=15:release=220," if engine == "piper" else
           "highpass=f=90,lowpass=f=9000,equalizer=f=2800:t=q:w=1.2:g=-2,acompressor=threshold=-18dB:ratio=3:attack=10:release=120,")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw),
                     "-af", eq + "aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=7",

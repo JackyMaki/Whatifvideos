@@ -6,3 +6,4 @@
   block, street-level blocky low-poly scenes, 9:16, exactly 60 s).
 - Reply in plain words and short sentences.
 - Narration uses the Piper neural voice en-us-ryan-high, not espeak/MBROLA.
+- Voice settings: length_scale 1.22, noise_scale 0.3, noise_w 0.55, pitch 0.95 (calm, flat, slightly deeper).

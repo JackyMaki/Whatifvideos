@@ -41,5 +41,8 @@
     }
   ],
   "engine": "piper",
-  "length_scale": 1.1
+  "length_scale": 1.22,
+  "noise_scale": 0.3,
+  "noise_w": 0.55,
+  "pitch": 0.95
 }
