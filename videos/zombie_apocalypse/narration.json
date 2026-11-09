@@ -2,9 +2,9 @@
   "title": "What if the zombie apocalypse happened?",
   "output": "what_if_zombie_apocalypse_9x16.mp4",
   "poster_time": 38,
-  "voice": "en-us-ryan-high",
+  "voice": "en-us-libritts-high",
   "engine": "piper",
-  "length_scale": 1.22,
+  "length_scale": 1.15,
   "lines": [
     {
       "id": 1,
@@ -42,7 +42,9 @@
       "text": "So, where would you go first? The rooftop, or the supermarket?"
     }
   ],
-  "noise_scale": 0.3,
-  "noise_w": 0.55,
-  "pitch": 0.95
+  "noise_scale": 0.4,
+  "noise_w": 0.6,
+  "pitch": 1.0,
+  "speaker": 6,
+  "flatten": 0.5
 }

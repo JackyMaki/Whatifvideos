@@ -2,7 +2,7 @@
   "title": "What if you used 100% of your brain?",
   "output": "what_if_100_percent_brain_9x16.mp4",
   "poster_time": 38,
-  "voice": "en-us-ryan-high",
+  "voice": "en-us-libritts-high",
   "lines": [
     {
       "id": 1,
@@ -41,8 +41,10 @@
     }
   ],
   "engine": "piper",
-  "length_scale": 1.22,
-  "noise_scale": 0.3,
-  "noise_w": 0.55,
-  "pitch": 0.95
+  "length_scale": 1.15,
+  "noise_scale": 0.4,
+  "noise_w": 0.6,
+  "pitch": 1.0,
+  "speaker": 6,
+  "flatten": 0.5
 }

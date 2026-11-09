@@ -16,16 +16,32 @@ engine = spec.get("engine", "piper" if voice.startswith("en-us-") or voice.start
 VOICES = ROOT / "audio" / "voices"
 TOTAL = 60.0
 
+def flatten_pitch(path, factor):
+    """Compress pitch excursions around the median (factor 1 = unchanged, 0 = monotone) for a calmer read."""
+    import numpy as np, parselmouth
+    from parselmouth.praat import call
+    snd = parselmouth.Sound(str(path))
+    pitch = snd.to_pitch(time_step=0.01, pitch_floor=60, pitch_ceiling=400)
+    f = pitch.selected_array["frequency"]; f = f[f > 0]
+    if len(f) < 10: return
+    med = float(np.median(f))
+    man = call(snd, "To Manipulation", 0.01, 60, 400); tier = call(man, "Extract pitch tier")
+    call(tier, "Formula", f"{med} * (self/{med}) ^ {factor}")
+    call([tier, man], "Replace pitch tier")
+    out = call(man, "Get resynthesis (overlap-add)"); out.scale_peak(0.9); out.save(str(path), "WAV")
+
 def synth(text, raw):
     """Piper neural voice (audio/voices/<voice>.onnx, see audio/get_voices.sh) or espeak-ng/MBROLA."""
     if engine == "piper":
         model = VOICES / f"{voice}.onnx"
         if not model.exists():
             sys.exit(f"missing voice model {model}; run audio/get_voices.sh")
-        subprocess.run([sys.executable, "-m", "piper", "-m", str(model), "-c", str(model) + ".json",
+        speaker = [] if spec.get("speaker") is None else ["--speaker", str(spec["speaker"])]
+        subprocess.run([sys.executable, "-m", "piper", "-m", str(model), "-c", str(model) + ".json", *speaker,
                         "--length-scale", str(spec.get("length_scale", 1.0)), "--sentence-silence", "0.25",
                         "--noise-scale", str(spec.get("noise_scale", 0.667)), "--noise-w", str(spec.get("noise_w", 0.8)),
                         "-f", str(raw), "--", text], check=True, capture_output=True)
+        if spec.get("flatten", 1.0) < 1.0: flatten_pitch(raw, spec["flatten"])
     else:
         subprocess.run(["espeak-ng", "-v", voice, "-s", str(speed), "-p", "40", "-a", "170", "-w", str(raw), text], check=True)
 
