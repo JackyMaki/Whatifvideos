@@ -1,0 +1,5 @@
+# generated intermediates (rebuild with ./build.sh)
+render/frames/
+render/preview/
+audio/build/*.wav
+node_modules/
