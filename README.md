@@ -10,6 +10,7 @@ tweaked by editing a few files, and a new episode is a new folder under `videos/
 |------|-------|--------|-------|
 | `brain_100_percent` | `output/brain_100_percent/what_if_100_percent_brain_9x16.mp4` | `output/brain_100_percent/poster.jpg` | A floating brain lights up as the day passes: learning, recall, hunger, a midnight storm, calm. |
 | `zombie_apocalypse` | `output/zombie_apocalypse/what_if_zombie_apocalypse_9x16.mp4` | `output/zombie_apocalypse/poster.jpg` | One bite at sunrise; a survivor climbs to a rooftop while the city panics, the power fails, the infected take the streets, and night brings a barrel fire and a hard question. |
+| `body_swap` | `output/body_swap/what_if_you_switched_bodies_with_your_crush_9x16.mp4` | `output/body_swap/poster.jpg` | Wake up in your crush's bedroom, meet yourself at the café, make the same wish at the fountain, and swap back with a splash. |
 | `same_thoughts` | `output/same_thoughts/what_if_everyone_shared_the_same_thoughts_9x16.mp4` | `output/same_thoughts/poster.jpg` | Thought bubbles over a plaza all lock to the same thought; pairs nod, the crowd walks in step, the night fear is shared, and one person walks away with a different thought. |
 | `future_100_years` | `output/future_100_years/what_if_woke_up_100_years_future_9x16.mp4` | `output/future_100_years/poster.jpg` | A sleeper wakes in a city plaza in 2126: buildings grow and light up, cars lift into sky lanes, holo screens, worthless coins, a DNA helix, back to sleep. |
 

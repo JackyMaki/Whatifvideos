@@ -1,0 +1,19 @@
+{
+  "title": "What if you switched bodies with your crush?",
+  "output": "what_if_you_switched_bodies_with_your_crush_9x16.mp4",
+  "poster_time": 12,
+  "voice": "am_onyx",
+  "engine": "kokoro",
+  "speed_factor": 0.95,
+  "lang": "en-us",
+  "whisper": 0,
+  "lines": [
+    {"id": 1, "start": 0.8,  "text": "What if you switched bodies with your crush?"},
+    {"id": 2, "start": 6.0,  "text": "You wake up and the ceiling is wrong. You walk to the mirror, and the face looking back is your crush's. Her eyes. Blinking because you told them to."},
+    {"id": 3, "start": 15.0, "text": "By mid-morning you have a plan. Rule one of a body swap: find the other body. Then your phone buzzes. It's your own number. Café. Now."},
+    {"id": 4, "start": 24.0, "text": "By noon you're sitting across from yourself. Task one: don't make it weird. Task two: what did you both touch yesterday? A coin. In the fountain."},
+    {"id": 5, "start": 33.0, "text": "By sunset you're both at the fountain, coin in hand. Task three: make the same wish, at the same time. Which means saying the thing out loud."},
+    {"id": 6, "start": 43.5, "text": "At night, you both say it. The coin drops. The water lights up. And boom."},
+    {"id": 7, "start": 52.5, "text": "So, back in your own body, with a crush who now knows everything, what do you say first?"}
+  ]
+}

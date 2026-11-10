@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What if you switched bodies with your crush — low poly scene</title>
+<style>#flash { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; background: #fff; opacity: 0; pointer-events: none; }</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="ui">
+  <div id="flash"></div>
+  <div id="title" class="abs">What if you switched bodies with <em>your crush</em>?</div>
+  <div id="hud" class="abs"><div id="hudLabel" class="label">Wrong body for</div><div id="hudValue">0h 00m</div><div id="hudSub" class="label">06:00 · Sunrise</div></div>
+  <div id="cap" class="abs"><div id="capInner"></div></div>
+  <div id="footer" class="abs">A what‑if, every day</div>
+</div>
+
+<script type="module">
+import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+import { L, lam, glowMat, solid, roundedBox, buildStreets, buildBuildings, addStorefront, buildStreetFurniture, updateTrafficLights, person, animateGait, makePedestrians, placePedestrian, buildCars } from '../../render/city.js';
+injectBaseCss();
+
+const world = createWorld({ seed: 4242, canvas: document.getElementById('c'), ground: 'none', shadows: true, shadowExtent: 34, fog: 0.014, clouds: 9 });
+const { rng, R, renderer, scene, camera, hemi, sunLight } = world;
+const SKY = { ...DAY,
+  SKY: {
+    top: [[0, '#3a4f7e'], [7, '#5f9be0'], [24, '#4f8fdc'], [34, '#5a5f9e'], [39, '#4a3a7a'], [44, '#1b1f4a'], [49, '#070a20'], [60, '#06081c']],
+    mid: [[0, '#9a7aa6'], [7, '#a9cdf0'], [24, '#a6cdf2'], [34, '#c89ab0'], [39, '#ff8a5a'], [44, '#5a3d6e'], [49, '#1c1a3a'], [60, '#1a1a38']],
+    bot: [[0, '#f0a878'], [7, '#dde9f3'], [24, '#e2eef6'], [34, '#ffc89a'], [39, '#ff6a3d'], [44, '#6a3d6e'], [49, '#2a2446'], [60, '#282444']],
+  },
+  hemiSky: [[0, '#8a7ab8'], [7, '#bfd8ff'], [34, '#e0b0b0'], [44, '#44508e'], [60, '#3c4886']],
+  hemiGround: [[0, '#4a3a3a'], [7, '#55565a'], [44, '#232a44'], [60, '#1f2640']] };
+
+// ---------------------------------------------------------------------------
+// Timeline
+// ---------------------------------------------------------------------------
+const WAKE = 6.4, BOOM = 48.6;
+const CUT = 23.8;                      // bedroom -> plaza
+
+// ---------------------------------------------------------------------------
+// City (plaza with the café on the left building, like the series)
+// ---------------------------------------------------------------------------
+buildStreets(world);
+const buildings = buildBuildings(world, { nearHeights: [5, 9], sideHeights: [5, 8.5] });
+const { lampHeads, trafficLights } = buildStreetFurniture(world);
+const cars = buildCars(world, 12);
+for (const [bx, nm, col, aw] of [[3, 'FLOWERS', '#c9527a', 0xa83a5e], [-10, 'BOOKS', '#7a4a9a', 0x5a3a7a], [15, 'PHARMACY', '#2f7fbf', 0x2f5f8f]]) { const b = buildings.filter(b => b.row === 'shop' && !b.store).sort((a, c) => Math.abs(a.x - bx) - Math.abs(c.x - bx))[0]; if (b) b.store = addStorefront(world, b, { name: nm, color: col, awning: aw }); }
+const cafeB = buildings.filter(b => b.side === -1).sort((a, b) => Math.abs(a.z - 2) - Math.abs(b.z - 2))[0];
+const DOOR_X = cafeB.x + cafeB.w / 2, DOOR_Z = cafeB.z + 0.4;
+{
+  const frame = solid(new THREE.BoxGeometry(0.16, 2.3, 1.3), lam(0x3a3a40)); frame.position.set(DOOR_X + 0.02, 0.65, DOOR_Z); scene.add(frame);
+  const glass = solid(new THREE.BoxGeometry(0.1, 1.6, 3.2), lam(0x4a5466)); glass.position.set(DOOR_X + 0.02, 0.5, DOOR_Z - 2.6); scene.add(glass);
+  const aw = solid(new THREE.BoxGeometry(1.4, 0.1, 5.4), lam(0x2f6f4e)); aw.position.set(DOOR_X + 0.7, 2.25, DOOR_Z - 1.4); scene.add(aw);
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 200; const g = c.getContext('2d'); g.fillStyle = '#2f6f4e'; g.fillRect(0, 0, 1024, 200); g.fillStyle = '#f4efe6'; g.font = '700 118px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('CAFÉ', 512, 96);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = solid(new THREE.BoxGeometry(0.22, 0.95, 4.8), lam(0x2f6f4e)); sign.position.set(DOOR_X + 0.12, 3.0, DOOR_Z - 1.4); scene.add(sign);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 0.94), new THREE.MeshLambertMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.2 })); face.rotation.y = Math.PI / 2; face.position.set(DOOR_X + 0.24, 3.0, DOOR_Z - 1.4); scene.add(face); cafeB.signMat = face.material;
+}
+// café terrace: the meeting table with two chairs facing each other across it (along z)
+const TABLE = new THREE.Vector3(DOOR_X + 2.3, -0.5, DOOR_Z - 2.4);
+const CHAIR_A = new THREE.Vector3(TABLE.x, -0.5, TABLE.z + 0.95), CHAIR_B = new THREE.Vector3(TABLE.x, -0.5, TABLE.z - 0.95);
+{
+  const top = solid(new THREE.CylinderGeometry(0.55, 0.55, 0.06, 14), lam(0xe8e2d6)); top.position.set(TABLE.x, 0.3, TABLE.z); scene.add(top);
+  const leg = solid(new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8), lam(0x3a3f48)); leg.position.set(TABLE.x, -0.1, TABLE.z); scene.add(leg);
+  for (const [c, back] of [[CHAIR_A, 1], [CHAIR_B, -1]]) { const seat = solid(roundedBox(0.5, 0.08, 0.5, 0.3), lam(0x3a3f48)); seat.position.set(c.x, -0.02, c.z); scene.add(seat); const bk = solid(roundedBox(0.5, 0.5, 0.08, 0.3), lam(0x3a3f48)); bk.position.set(c.x, 0.26, c.z + back * 0.24); scene.add(bk); for (const [sx, sz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) { const lg = solid(new THREE.CylinderGeometry(0.025, 0.025, 0.48, 6), lam(0x3a3f48)); lg.position.set(c.x + sx, -0.26, c.z + sz); scene.add(lg); } }
+  const cups = []; for (const [dx, dz] of [[-0.2, 0.2], [0.2, -0.2]]) { const cp = solid(new THREE.CylinderGeometry(0.08, 0.06, 0.16, 10), lam(0xf4efe6)); cp.position.set(TABLE.x + dx, 0.41, TABLE.z + dz); scene.add(cp); }
+  for (const dz of [2.2]) { const tbl = solid(new THREE.CylinderGeometry(0.45, 0.45, 0.06, 12), lam(0xe8e2d6)); tbl.position.set(TABLE.x, 0.3, TABLE.z + dz); scene.add(tbl); const lg = solid(new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8), lam(0x3a3f48)); lg.position.set(TABLE.x, -0.1, TABLE.z + dz); scene.add(lg); }
+}
+// fountain
+const fountain = new THREE.Group(); fountain.position.set(0, -0.5, 0.5); scene.add(fountain);
+const waterMat = new THREE.MeshLambertMaterial({ color: 0x5fa8d8, emissive: 0x3fb8ff, emissiveIntensity: 0, transparent: true, opacity: 0.85 });
+{
+  const basin = solid(new THREE.CylinderGeometry(2.4, 2.6, 0.7, 16), lam(0xb9b3a8)); basin.position.y = 0.35; fountain.add(basin);
+  const water = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.1, 16), waterMat); water.position.y = 0.66; fountain.add(water);
+  const column = solid(new THREE.CylinderGeometry(0.3, 0.45, 1.6, 10), lam(0xb9b3a8)); column.position.y = 1.3; fountain.add(column);
+  const bowl = solid(new THREE.CylinderGeometry(0.9, 0.5, 0.3, 12), lam(0xb9b3a8)); bowl.position.y = 2.1; fountain.add(bowl);
+}
+const sprayN = 70, sprayPos = new Float32Array(sprayN * 3), spraySeeds = []; for (let i = 0; i < sprayN; i++) spraySeeds.push({ az: R(0, 6.28), phase: rng(), speed: R(0.6, 0.9) });
+const sprayGeo = new THREE.BufferGeometry(); sprayGeo.setAttribute('position', new THREE.BufferAttribute(sprayPos, 3));
+const spray = new THREE.Points(sprayGeo, new THREE.PointsMaterial({ color: 0xcfe9ff, size: 0.22, sizeAttenuation: true, transparent: true, opacity: 0.8, depthWrite: false, map: radialTexture(), alphaTest: 0.01 })); scene.add(spray);
+const splashN = 60, splashPos = new Float32Array(splashN * 3), splashSeeds = []; for (let i = 0; i < splashN; i++) splashSeeds.push({ az: R(0, 6.28), v: R(1.5, 3.5), vy: R(2.5, 4.5) });
+const splashGeo = new THREE.BufferGeometry(); splashGeo.setAttribute('position', new THREE.BufferAttribute(splashPos, 3));
+const splash = new THREE.Points(splashGeo, new THREE.PointsMaterial({ color: 0xeaf6ff, size: 0.2, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, map: radialTexture(), alphaTest: 0.01 })); scene.add(splash);
+const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.08, 8, 48), glowMat(0x9ff3ff, 0)); ring.position.set(0, 0.3, 0.5); ring.rotation.x = Math.PI / 2; scene.add(ring);
+const fountainLight = new THREE.PointLight(0x7cf5ff, 0, 24, 1.4); fountainLight.position.set(0, 2.5, 0.5); scene.add(fountainLight);
+const moonLamp = new THREE.PointLight(0x9fb4ff, 0, 26, 1.4); moonLamp.position.set(2, 6, 5); scene.add(moonLamp);
+
+// pedestrians (fewer at night) and a few standers
+const peds = makePedestrians(world, [
+  { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: 1, count: 7, speed: 1.3 }, { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: -1, count: 6, speed: 1.15 },
+  { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: 1, count: 5, speed: 1.2 }, { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: -1, count: 5, speed: 1.35 },
+], { gap: 3.0, laneOffset: 0.45 });
+const standers = [];
+for (const [x, z, ry, extra] of [[5.2, 4.4, -0.8, { phone: true }], [-3.6, -3.8, 2.4, {}], [6.4, -3.0, -2.6, { phone: true }], [3.0, 7.0, 2.9, {}]]) { const g = person(world, extra); g.position.set(x, -0.5, z); g.rotation.y = ry; scene.add(g); standers.push({ g, ph: R(0, 6.28) }); }
+
+// ---------------------------------------------------------------------------
+// The bedroom (far away at x = 200, same ground height)
+// ---------------------------------------------------------------------------
+const ROOM = new THREE.Vector3(200, -0.5, 0);
+const room = new THREE.Group(); room.position.copy(ROOM); scene.add(room);
+{
+  const floor = solid(new THREE.BoxGeometry(7, 0.2, 7), lam(0x9a7a5a), false, true); floor.position.y = -0.1; room.add(floor);
+  const ceiling = solid(new THREE.BoxGeometry(7, 0.2, 7), lam(0xf4efe6), false, true); ceiling.position.y = 3.3; room.add(ceiling);
+  const rug = solid(new THREE.CylinderGeometry(1.6, 1.6, 0.04, 24), lam(0x6b8e9f), false, true); rug.position.set(0.4, 0.02, 0.6); room.add(rug);
+  const wallMat = lam(0xdcd3c4); const H = 3.2;
+  // back wall with a window opening
+  for (const [w, h, x, y] of [[7, 0.45, 0, H - 0.225], [5.7, 1.0, -0.65, 0.5], [3.1, 1.75, -1.95, 1.875], [0.2, 2.75, 2.1, 1.375], [1.0, 0.55, 2.7, 2.475], [0.3, 2.75, 3.35, 1.375]]) { const wall = solid(new THREE.BoxGeometry(w, h, 0.2), wallMat); wall.position.set(x, y, -3.5); room.add(wall); }
+  const backdrop = solid(new THREE.BoxGeometry(3.2, H, 0.2), wallMat); backdrop.position.set(2.7, H / 2, -6.2); room.add(backdrop);
+  const backFloor = solid(new THREE.BoxGeometry(3.2, 0.2, 3), lam(0x9a7a5a), false, true); backFloor.position.set(2.7, -0.1, -4.9); room.add(backFloor);
+  const backCeil = solid(new THREE.BoxGeometry(3.2, 0.2, 3), lam(0xf4efe6), false, true); backCeil.position.set(2.7, 3.3, -4.9); room.add(backCeil);
+  for (const sx of [1.1, 4.3]) { const side = solid(new THREE.BoxGeometry(0.2, H, 3), wallMat); side.position.set(sx, H / 2, -4.9); room.add(side); }
+  const sill = solid(new THREE.BoxGeometry(2.4, 0.08, 0.4), lam(0xf4efe6)); sill.position.set(0.8, 1.0, -3.4); room.add(sill);
+  const lintel = solid(new THREE.BoxGeometry(2.4, 0.45, 0.2), wallMat); lintel.position.set(0.8, 2.525, -3.5); room.add(lintel);
+  for (const [w, h, x, y] of [[0.08, 1.3, -0.4, 1.65], [0.08, 1.3, 2.0, 1.65], [2.4, 0.08, 0.8, 1.65]]) { const bar = solid(new THREE.BoxGeometry(w, h, 0.08), lam(0xf4efe6)); bar.position.set(x, y, -3.5); room.add(bar); }
+  const wallL = solid(new THREE.BoxGeometry(0.2, H, 7), wallMat); wallL.position.set(-3.5, H / 2, 0); room.add(wallL);
+  // right wall with the door opening at z = 1.6
+  for (const [d, h, z, y] of [[2.6, H, -2.2, H / 2], [2.2, H, 2.9, H / 2], [1.2, 0.9, 1.6, H - 0.45]]) { const wall = solid(new THREE.BoxGeometry(0.2, h, d), wallMat); wall.position.set(3.5, y, z); room.add(wall); }
+  const dframe = solid(new THREE.BoxGeometry(0.26, 2.3, 1.3), lam(0x5a3a2a)); dframe.position.set(3.5, 1.15, 1.6); room.add(dframe);
+  // bed along the left wall, head at the back
+  const wood = lam(0x7a4e32);
+  const bedG = new THREE.Group(); bedG.position.set(-2.2, 0, -1.4); room.add(bedG);
+  const frame = solid(new THREE.BoxGeometry(2.2, 0.4, 4.0), wood); frame.position.y = 0.4; bedG.add(frame);
+  const head = solid(new THREE.BoxGeometry(2.2, 1.2, 0.16), wood); head.position.set(0, 1.0, -2.05); bedG.add(head);
+  const mattress = solid(new THREE.BoxGeometry(2.0, 0.35, 3.8), lam(0xf4efe6)); mattress.position.y = 0.77; bedG.add(mattress);
+  const pillow = solid(roundedBox(1.2, 0.26, 0.7, 0.4), lam(0xffffff)); pillow.position.set(0, 1.07, -1.5); bedG.add(pillow);
+  const blanket = solid(roundedBox(2.1, 0.26, 2.6, 0.2), lam(0xc96a8a)); blanket.position.set(0, 1.05, 0.5); bedG.add(blanket); bedG.userData.blanket = blanket;
+  // nightstand with alarm clock, desk under the window with a phone, a standing mirror right of the window
+  const stand = solid(new THREE.BoxGeometry(0.7, 0.7, 0.7), wood); stand.position.set(-0.8, 0.35, -3.0); room.add(stand);
+  const clock = solid(roundedBox(0.4, 0.26, 0.14, 0.3), lam(0x2b2f3a)); clock.position.set(-0.8, 0.83, -3.0); room.add(clock);
+  const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.16), new THREE.MeshBasicMaterial({ color: 0xff3b2f, toneMapped: false })); clockFace.position.set(-0.8, 0.83, -2.92); room.add(clockFace); room.userData.clockFace = clockFace;
+  const desk = solid(new THREE.BoxGeometry(2.4, 0.08, 0.8), lam(0xd8c8a8)); desk.position.set(0.8, 0.78, -3.0); room.add(desk);
+  for (const sx of [-1.05, 1.05]) { const dl = solid(new THREE.BoxGeometry(0.08, 0.78, 0.7), lam(0xd8c8a8)); dl.position.set(0.8 + sx, 0.39, -3.0); room.add(dl); }
+  const mug = solid(new THREE.CylinderGeometry(0.08, 0.07, 0.18, 10), lam(0x2f6f4e)); mug.position.set(1.5, 0.91, -3.1); room.add(mug);
+  const books = solid(new THREE.BoxGeometry(0.5, 0.3, 0.35), lam(0x7a4a9a)); books.position.set(0.1, 0.97, -3.1); room.add(books);
+  for (const [w, h, x, y] of [[0.08, 2.3, 2.16, 1.1], [0.08, 2.3, 3.24, 1.1], [1.16, 0.08, 2.7, 2.21], [1.16, 0.08, 2.7, -0.01]]) { const f = solid(new THREE.BoxGeometry(w, h, 0.1), lam(0x5a3a2a)); f.position.set(x, y, -3.3); room.add(f); }
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 2.14), new THREE.MeshLambertMaterial({ color: 0xbfd4e6, transparent: true, opacity: 0.22 })); glass.position.set(2.7, 1.1, -3.25); room.add(glass);
+  const lamp = solid(new THREE.CylinderGeometry(0.02, 0.03, 1.5, 6), lam(0x3a3f48)); lamp.position.set(3.0, 0.75, 2.8); room.add(lamp); const shade = solid(new THREE.ConeGeometry(0.35, 0.4, 10, 1, true), lam(0xf4efe6)); shade.position.set(3.0, 1.6, 2.8); room.add(shade);
+  const poster = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.4), lam(0x5aa65a)); poster.position.set(-3.39, 1.9, 1.2); poster.rotation.y = Math.PI / 2; room.add(poster);
+}
+const roomDoor = new THREE.Group(); roomDoor.position.set(ROOM.x + 3.5, ROOM.y, ROOM.z + 1.6 - 0.55); scene.add(roomDoor);
+const roomLeaf = solid(new THREE.BoxGeometry(0.08, 2.1, 1.1), lam(0x5a3a2a)); roomLeaf.position.set(0, 1.05, 0.55); roomDoor.add(roomLeaf);
+const knob = solid(new THREE.IcosahedronGeometry(0.05, 1), lam(0xd9b84a)); knob.position.set(0.08, 1.0, 0.95); roomDoor.add(knob);
+const roomLight = new THREE.PointLight(0xffe0b0, 18, 14, 1.6); roomLight.position.set(ROOM.x + 0.5, 2.6, ROOM.z + 0.5); scene.add(roomLight);
+const MIRROR_Z = ROOM.z - 3.25, MIRROR_X = ROOM.x + 2.7;
+const roomPhone = solid(roundedBox(0.14, 0.26, 0.02, 0.3), lam(0x1a1d26)); roomPhone.position.set(ROOM.x + 0.9, 0.84, ROOM.z - 2.95); scene.add(roomPhone);
+const phoneGlow = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.2), new THREE.MeshBasicMaterial({ color: 0x9ff3ff, toneMapped: false })); phoneGlow.rotation.x = -Math.PI / 2; phoneGlow.position.set(ROOM.x + 0.9, 0.86, ROOM.z - 2.95); scene.add(phoneGlow);
+
+// ---------------------------------------------------------------------------
+// The two bodies: "crush" (where you wake up) and "you" (where your crush wakes up)
+// ---------------------------------------------------------------------------
+const CRUSH = { skin: 0xe0ac69, shirt: 0xd84f8e, pants: 0x2b3a55, hair: 0x2a1a0e, hairStyle: 'long', jacket: false, bag: false };
+const YOU = { skin: 0xf1c27d, shirt: 0xf4f1ea, pants: 0x2b3a55, hair: 0x4a3020, hairStyle: 'short', jacket: 0x7a3a2e, bag: false };
+const crush = person(world, CRUSH); scene.add(crush);          // you are inside this body until the boom
+const you = person(world, YOU); scene.add(you);                // your crush is inside this one
+const reflection = person(world, CRUSH); scene.add(reflection); reflection.scale.x = -1;
+const handPhone = solid(roundedBox(0.14, 0.26, 0.02, 0.3), lam(0x1a1d26)); handPhone.position.set(0, -0.76, 0.1); handPhone.rotation.x = -0.5; crush.userData.limbs.ra.add(handPhone); handPhone.visible = false;
+const coin = solid(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 12), lam(0xffc93c, { emissive: 0x7a5a10 })); coin.position.set(0, -0.78, 0.1); crush.userData.limbs.ra.add(coin); coin.visible = false;
+const flyingCoin = solid(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 12), lam(0xffc93c, { emissive: 0x7a5a10 })); flyingCoin.visible = false; scene.add(flyingCoin);
+// mind orbs: blue = you, pink = your crush
+const orbYou = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0x7cf5ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })); orbYou.scale.setScalar(0.7); scene.add(orbYou);
+const orbCrush = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xff8ac8, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })); orbCrush.scale.setScalar(0.7); scene.add(orbCrush);
+const zzz = [0, 1, 2].map(k => ({ s: textSprite(scene, 'z', { color: '#eef3ff', size: 180, weight: 500, font: '"EB Garamond", serif' }), k }));
+
+// ---------------------------------------------------------------------------
+// Camera & overlay (position + target keys; the cut at CUT jumps from the room to the plaza)
+// ---------------------------------------------------------------------------
+const RX = ROOM.x, RZ = ROOM.z;
+const CAM = {
+  x: [[0, RX + 1.6], [6, RX + 1.9], [9.6, RX + 1.2], [11.2, RX + 0.4], [14.5, RX + 0.3], [16, RX - 1.4], [19.5, RX - 1.0], [21, RX - 0.6], [23.7, RX - 1.0], [23.8, DOOR_X + 5.2], [32.5, DOOR_X + 4.9], [34, 3.4], [42.5, 3.0], [44, 2.4], [52, 2.4], [53.5, 1.8], [60, 2.6]],
+  y: [[0, 2.2], [6, 2.0], [9.6, 1.9], [11.2, 2.0], [14.5, 1.9], [16, 2.0], [19.5, 1.9], [21, 2.0], [23.7, 2.0], [23.8, 2.3], [32.5, 2.2], [34, 2.4], [42.5, 2.3], [44, 2.2], [52, 2.4], [53.5, 2.2], [60, 3.0]],
+  z: [[0, RZ + 2.6], [6, RZ + 2.4], [9.6, RZ + 1.4], [11.2, RZ + 0.2], [14.5, RZ - 0.2], [16, RZ + 0.6], [19.5, RZ + 0.2], [21, RZ - 0.8], [23.7, RZ - 1.2], [23.8, DOOR_Z + 1.2], [32.5, DOOR_Z + 0.9], [34, 7.8], [42.5, 7.4], [44, 6.6], [52, 6.8], [53.5, 7.4], [60, 10.5]],
+  tx: [[0, RX - 2.0], [6, RX - 2.2], [9.6, RX - 0.6], [11.2, RX + 2.3], [14.5, RX + 2.4], [16, RX + 0.9], [19.5, RX + 0.9], [21, RX + 3.3], [23.7, RX + 3.4], [23.8, TABLE.x], [32.5, TABLE.x], [34, 0], [42.5, 0], [44, 0], [52, 0], [53.5, 0], [60, 0]],
+  ty: [[0, 1.0], [6, 1.1], [9.6, 1.1], [11.2, 1.3], [14.5, 1.3], [16, 1.1], [19.5, 1.1], [21, 1.1], [23.7, 1.1], [23.8, 1.0], [32.5, 1.0], [34, 1.3], [42.5, 1.3], [44, 1.2], [52, 1.4], [53.5, 1.4], [60, 1.4]],
+  tz: [[0, RZ - 1.4], [6, RZ - 1.2], [9.6, RZ - 1.4], [11.2, RZ - 3.0], [14.5, RZ - 3.1], [16, RZ - 2.8], [19.5, RZ - 2.9], [21, RZ + 1.6], [23.7, RZ + 1.6], [23.8, TABLE.z - 0.4], [32.5, TABLE.z - 0.5], [34, 3.4], [42.5, 3.4], [44, 3.2], [52, 3.0], [53.5, 3.6], [60, 3.6]],
+};
+const overlay = createOverlay({ highlight: /(the ceiling is wrong|your crush's|blinking because you told them to|find the other body|your own number|café\. now|sitting across from yourself|don't make it weird|a coin|in the fountain|the same wish|at the same time|saying the thing out loud|the water lights up|boom|knows everything|what do you say first)/gi });
+const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
+const flashEl = document.getElementById('flash');
+function updateHud(t) {
+  if (t < BOOM) { const hours = clamp((t - WAKE) / (60 - WAKE) * 17, 0, 17); const hh = Math.floor(hours), mm = Math.floor((hours - hh) * 60); hud.value.textContent = `${hh}h ${String(mm).padStart(2, '0')}m`; hud.label.textContent = 'Wrong body for'; hud.value.style.color = '#ff9fb0'; }
+  else { hud.label.textContent = 'Right body'; hud.value.textContent = 'Yours again'; hud.value.style.color = '#9ff3ff'; hud.value.style.fontSize = '86px'; }
+  const f = Math.max(win(t, BOOM - 0.15, BOOM + 0.9, 0.15, 0.9), 0); flashEl.style.opacity = f * 0.95;
+}
+
+// ---------------------------------------------------------------------------
+// Blocking.  Helpers: bed lying/sitting, gait, sit transitions
+// ---------------------------------------------------------------------------
+const BED_TOP = ROOM.y + 0.95, BED_X = ROOM.x - 2.2, BED_Z = ROOM.z - 1.4;
+const MIRROR_SPOT = new THREE.Vector3(MIRROR_X, -0.5, MIRROR_Z + 1.5), DESK_SPOT = new THREE.Vector3(ROOM.x + 0.9, -0.5, ROOM.z - 2.2), ROOM_DOOR_SPOT = new THREE.Vector3(ROOM.x + 2.6, -0.5, ROOM.z + 1.6), OUTSIDE = new THREE.Vector3(ROOM.x + 5.2, -0.5, ROOM.z + 1.6);
+const FOUNT_A = new THREE.Vector3(-1.5, -0.5, 3.6), FOUNT_B = new THREE.Vector3(1.5, -0.5, 3.6);
+function sitPose(g, sitU, t, extra = {}) {
+  const Lb = g.userData.limbs; g.position.y = lerp(-0.5, -0.78, sitU);
+  Lb.ll.rotation.x = -1.5 * sitU; Lb.rl.rotation.x = -1.5 * sitU; g.userData.torso.rotation.x = 0.4 * Math.sin(sitU * Math.PI) + 0.05 * sitU;
+  Lb.la.rotation.x = -0.6 * sitU; Lb.ra.rotation.x = -0.6 * sitU; Lb.la.rotation.z = 0.05; Lb.ra.rotation.z = -0.05; Lb.head.rotation.x = 0.15 * Math.sin(sitU * Math.PI); Lb.head.rotation.y = 0;
+  if (extra.talk) { const k = extra.talk; Lb.ra.rotation.x = -0.9 - 0.4 * Math.sin(t * 4.2) * k; Lb.ra.rotation.z = -0.35 * k; Lb.head.rotation.x = Math.sin(t * 3.1) * 0.08 * k; }
+  if (extra.point) { Lb.ra.rotation.x = -1.6 * extra.point; Lb.ra.rotation.z = -0.9 * extra.point; Lb.head.rotation.y = -0.6 * extra.point; }
+}
+function crushPose(t) {
+  // in bed, asleep: lying on the back, head on the pillow (feet toward +z)
+  if (t < WAKE) return { lie: 1, pos: new THREE.Vector3(BED_X, BED_TOP, BED_Z - 1.05) };
+  if (t < WAKE + 1.6) { const u = smooth((t - WAKE) / 1.6); return { lie: 1 - u, pos: new THREE.Vector3(BED_X, BED_TOP, BED_Z - 1.05), sitUp: u }; }          // sits up in bed
+  if (t < WAKE + 2.6) { const u = smooth((t - WAKE - 1.6) / 1.0); return { bedEdge: u, pos: new THREE.Vector3(lerp(BED_X, BED_X + 1.1, u), BED_TOP, lerp(BED_Z - 1.05, BED_Z - 0.4, u)), ry: lerp(0, Math.PI / 2, u) }; } // swings legs to the edge
+  if (t < WAKE + 3.5) { const u = smooth((t - WAKE - 2.6) / 0.9); return { standUp: 1 - u, pos: new THREE.Vector3(BED_X + 1.1 + u * 0.3, -0.5, BED_Z - 0.4), ry: Math.PI / 2 }; }                               // stands
+  if (t < 12.0) { const u = smooth((t - WAKE - 3.5) / (12.0 - WAKE - 3.5)); const from = new THREE.Vector3(BED_X + 1.4, -0.5, BED_Z - 0.4); return { pos: from.clone().lerp(MIRROR_SPOT, u), ry: Math.atan2(MIRROR_SPOT.x - from.x, MIRROR_SPOT.z - from.z), mode: 'walk', phase: t * 9 }; }
+  if (t < 15.5) { const u = smooth((t - 12.0) / 0.6); return { pos: MIRROR_SPOT.clone(), ry: lerp(Math.atan2(MIRROR_SPOT.x - (BED_X + 1.4), MIRROR_SPOT.z - (BED_Z - 0.4)), Math.PI, u), mode: 'mirror', shock: smooth((t - 12.6) / 0.8), touch: smooth((t - 13.4) / 0.8) }; }
+  if (t < 17.0) { const u = smooth((t - 15.5) / 1.5); return { pos: MIRROR_SPOT.clone().lerp(DESK_SPOT, u), ry: Math.atan2(DESK_SPOT.x - MIRROR_SPOT.x, DESK_SPOT.z - MIRROR_SPOT.z) + (u > 0.8 ? (Math.PI - Math.atan2(DESK_SPOT.x - MIRROR_SPOT.x, DESK_SPOT.z - MIRROR_SPOT.z)) * smooth((u - 0.8) / 0.2) : 0), mode: 'walk', phase: t * 9 }; }
+  if (t < 19.6) { const reach = smooth((t - 17.0) / 0.7) * (1 - smooth((t - 17.9) / 0.5)); const read = smooth((t - 18.2) / 0.6); return { pos: DESK_SPOT.clone(), ry: Math.PI, mode: 'phone', reach, read, hasPhone: t >= 17.8 }; }
+  if (t < 22.6) { const u = smooth((t - 19.6) / 3.0); const ry = Math.atan2(ROOM_DOOR_SPOT.x - DESK_SPOT.x, ROOM_DOOR_SPOT.z - DESK_SPOT.z); return { pos: DESK_SPOT.clone().lerp(ROOM_DOOR_SPOT, u), ry, mode: 'walk', phase: t * 9, hasPhone: true, push: smooth((t - 21.6) / 0.7) }; }
+  if (t < CUT) { const u = smooth((t - 22.6) / 1.2); return { pos: ROOM_DOOR_SPOT.clone().lerp(OUTSIDE, u), ry: Math.PI / 2, mode: 'walk', phase: t * 9, hasPhone: true, push: 1 - smooth((t - 23.0) / 0.5) }; }
+  // plaza: arrive from the right, back up to the chair facing your own body, sit
+  const ARRIVE = new THREE.Vector3(CHAIR_A.x + 4.5, -0.5, CHAIR_A.z + 1.2), PRE = new THREE.Vector3(CHAIR_A.x, -0.5, CHAIR_A.z + 0.9);
+  if (t < 26.2) { const u = smooth((t - CUT) / 2.4); return { pos: ARRIVE.clone().lerp(PRE, u), ry: Math.atan2(PRE.x - ARRIVE.x, PRE.z - ARRIVE.z), mode: 'walk', phase: t * 9 }; }
+  if (t < 26.9) { const u = smooth((t - 26.2) / 0.7); return { pos: PRE.clone(), ry: lerp(Math.atan2(PRE.x - ARRIVE.x, PRE.z - ARRIVE.z), Math.PI, u), mode: 'idle' }; }
+  if (t < 27.6) { const u = smooth((t - 26.9) / 0.7); return { pos: PRE.clone().lerp(new THREE.Vector3(CHAIR_A.x, -0.5, CHAIR_A.z + 0.05), u), ry: Math.PI, mode: 'walk', phase: -t * 7, amp: 0.4 }; }
+  if (t < 28.8) { const u = smooth((t - 27.6) / 1.2); return { pos: new THREE.Vector3(CHAIR_A.x, -0.5, CHAIR_A.z + 0.05), ry: Math.PI, mode: 'sit', sitU: u }; }
+  if (t < 33.2) return { pos: new THREE.Vector3(CHAIR_A.x, -0.5, CHAIR_A.z + 0.05), ry: Math.PI, mode: 'sit', sitU: 1, talk: win(t, 29.2, 31.0, 0.4, 0.4) };
+  if (t < 34.4) { const u = smooth((t - 33.2) / 1.2); return { pos: new THREE.Vector3(CHAIR_A.x, -0.5, CHAIR_A.z + 0.05), ry: Math.PI, mode: 'sit', sitU: 1 - u }; }
+  if (t < 38.4) { const u = smooth((t - 34.4) / 4.0); const from = new THREE.Vector3(CHAIR_A.x, -0.5, CHAIR_A.z + 0.6); return { pos: from.clone().lerp(FOUNT_A, u), ry: Math.atan2(FOUNT_A.x - from.x, FOUNT_A.z - from.z), mode: 'walk', phase: t * 9, coin: t > 36 }; }
+  if (t < 46.2) { const u = smooth((t - 38.4) / 0.8); return { pos: FOUNT_A.clone(), ry: lerp(Math.atan2(FOUNT_A.x - CHAIR_A.x, FOUNT_A.z - CHAIR_A.z), Math.PI / 2, u), mode: 'idle', coin: true, lookCoin: win(t, 39.5, 43.0, 0.8, 0.8), speak: win(t, 44.0, 46.0, 0.4, 0.3) }; }
+  if (t < 47.4) { const u = (t - 46.2) / 1.2; return { pos: FOUNT_A.clone(), ry: Math.PI / 2 - 0.9 * smooth(u * 2), mode: 'toss', tossU: u, coin: u < 0.45 }; }
+  if (t < 53.5) return { pos: FOUNT_A.clone(), ry: Math.PI / 2 - 0.9 * (1 - smooth((t - 47.4) / 1.0)), mode: 'idle', lookUp: win(t, 47.6, 50.5, 0.6, 1.0) };
+  // after the boom your crush is in this body: she steps a little closer and, at the end, takes the offered hand
+  const step = smooth((t - 55.5) / 1.4); const take = smooth((t - 58.2) / 1.0);
+  return { pos: FOUNT_A.clone().lerp(new THREE.Vector3(-0.55, -0.5, 3.6), step), ry: Math.PI / 2, mode: step > 0.02 && step < 0.98 ? 'walk' : 'idle', phase: t * 8, amp: 0.5, take };
+}
+function youPose(t) {
+  if (t < CUT) return { hidden: true };
+  if (t < 33.2) return { pos: new THREE.Vector3(CHAIR_B.x, -0.5, CHAIR_B.z - 0.05), ry: 0, mode: 'sit', sitU: 1, talk: win(t, 27.0, 29.2, 0.4, 0.4), point: win(t, 31.2, 33.0, 0.5, 0.4) };
+  if (t < 34.4) { const u = smooth((t - 33.2) / 1.2); return { pos: new THREE.Vector3(CHAIR_B.x, -0.5, CHAIR_B.z - 0.05), ry: 0, mode: 'sit', sitU: 1 - u }; }
+  if (t < 38.4) { const u = smooth((t - 34.4) / 4.0); const from = new THREE.Vector3(CHAIR_B.x + 0.9, -0.5, CHAIR_B.z + 0.3); return { pos: from.clone().lerp(FOUNT_B, u), ry: Math.atan2(FOUNT_B.x - from.x, FOUNT_B.z - from.z), mode: 'walk', phase: t * 9 + 1.5 }; }
+  if (t < 53.5) { const u = smooth((t - 38.4) / 0.8); return { pos: FOUNT_B.clone(), ry: lerp(Math.atan2(FOUNT_B.x - CHAIR_B.x, FOUNT_B.z - CHAIR_B.z), -Math.PI / 2, u), mode: 'idle', speak: win(t, 44.0, 46.0, 0.4, 0.3), lookUp: win(t, 47.6, 50.5, 0.6, 1.0) }; }
+  // after the boom you are back in this body: step closer, offer a hand
+  const step = smooth((t - 55.0) / 1.4); const offer = smooth((t - 57.0) / 1.0);
+  return { pos: FOUNT_B.clone().lerp(new THREE.Vector3(0.55, -0.5, 3.6), step), ry: -Math.PI / 2, mode: step > 0.02 && step < 0.98 ? 'walk' : 'idle', phase: t * 8, amp: 0.5, offer };
+}
+function applyPose(g, p, t) {
+  const Lb = g.userData.limbs; g.visible = !p.hidden; if (p.hidden) return;
+  g.position.copy(p.pos); g.rotation.y = p.ry ?? 0; g.rotation.x = 0;
+  if (p.lie != null) { // lying on the back (head toward the pillow at -z), rotating up to sit with the legs along the bed
+    const lie = p.lie; const lying = new THREE.Vector3(BED_X, BED_TOP + 0.17, BED_Z + 0.95), sitting = new THREE.Vector3(BED_X, BED_TOP - 0.68, BED_Z - 0.3);
+    g.position.lerpVectors(sitting, lying, lie); g.rotation.x = -Math.PI / 2 * lie; g.rotation.y = 0;
+    Lb.ll.rotation.x = -1.5 * (1 - lie); Lb.rl.rotation.x = -1.5 * (1 - lie); Lb.la.rotation.x = -0.3; Lb.ra.rotation.x = -0.3 - 0.9 * (1 - lie) * Math.sin((1 - lie) * Math.PI); Lb.la.rotation.z = 0.1; Lb.ra.rotation.z = -0.1; g.userData.torso.rotation.x = 0; Lb.head.rotation.x = -0.2 * (1 - lie); Lb.head.rotation.y = 0; return;
+  }
+  if (p.bedEdge != null) { g.position.set(p.pos.x, BED_TOP - 0.68, p.pos.z); Lb.ll.rotation.x = -1.5; Lb.rl.rotation.x = -1.5; Lb.la.rotation.x = -0.5; Lb.ra.rotation.x = -0.5; g.userData.torso.rotation.x = 0.1; Lb.head.rotation.x = 0.1; return; }
+  if (p.standUp != null) { sitPose(g, p.standUp, t); g.position.y = lerp(-0.5, BED_TOP - 0.68, p.standUp); return; }
+  if (p.mode === 'walk') { animateGait(g, p.phase, 'walk', p.amp ?? 1); if (p.hasPhone) { Lb.ra.rotation.x = -1.2; Lb.ra.rotation.z = -0.05; } }
+  else if (p.mode === 'sit') sitPose(g, p.sitU, t, p);
+  else if (p.mode === 'mirror') { animateGait(g, t * 1.4, 'idle'); const s = p.shock, h = p.touch; Lb.head.rotation.x = -0.1 * s; Lb.la.rotation.x = -2.3 * h; Lb.ra.rotation.x = -2.3 * h; Lb.la.rotation.z = 0.45 * h; Lb.ra.rotation.z = -0.45 * h; g.userData.torso.rotation.x = -0.08 * s; }
+  else if (p.mode === 'phone') { animateGait(g, t * 1.4, 'idle'); Lb.ra.rotation.x = -1.3 * p.reach - 1.2 * p.read; Lb.ra.rotation.z = -0.1; g.userData.torso.rotation.x = 0.35 * p.reach; Lb.head.rotation.x = 0.45 * (p.reach + p.read); }
+  else if (p.mode === 'toss') { animateGait(g, t * 1.4, 'idle'); const u = p.tossU; const swing = u < 0.45 ? -0.6 - 1.4 * smooth(u / 0.45) : -2.0 + 1.6 * smooth((u - 0.45) / 0.55); Lb.ra.rotation.x = swing; Lb.head.rotation.x = -0.3 * smooth(u); }
+  else { animateGait(g, t * 1.4, 'idle');
+    if (p.coin) { Lb.ra.rotation.x = -1.1 - 0.5 * (p.lookCoin || 0); Lb.ra.rotation.z = -0.3 * (p.lookCoin || 0); Lb.head.rotation.x = 0.5 * (p.lookCoin || 0); }
+    if (p.speak) { Lb.head.rotation.x = Math.sin(t * 5) * 0.06 * p.speak; Lb.la.rotation.x = -0.5 * p.speak; }
+    if (p.lookUp) Lb.head.rotation.x = -0.5 * p.lookUp;
+    if (p.offer) { Lb.ra.rotation.x = -1.2 * p.offer; Lb.ra.rotation.z = -0.15 * p.offer; }
+    if (p.take) { Lb.la.rotation.x = -1.2 * p.take; Lb.la.rotation.z = 0.15 * p.take; }
+  }
+  if (p.push) { Lb.la.rotation.x = -1.3 * p.push; Lb.la.rotation.z = -0.1 * p.push; }
+}
+function mirrorCopy(src, dst) {
+  dst.visible = src.visible && Math.abs(src.position.x - MIRROR_X) < 1.0 && src.position.z < MIRROR_Z + 2.2;
+  dst.position.set(src.position.x, src.position.y, 2 * MIRROR_Z - src.position.z); dst.rotation.set(src.rotation.x, Math.PI - src.rotation.y, src.rotation.z);
+  const a = src.userData.limbs, b = dst.userData.limbs;
+  for (const k of ['la', 'ra', 'll', 'rl', 'head']) { b[k].rotation.set(a[k].rotation.x, -a[k].rotation.y, -a[k].rotation.z); }
+  dst.userData.torso.rotation.x = src.userData.torso.rotation.x;
+}
+
+// ---------------------------------------------------------------------------
+// Per-frame update
+// ---------------------------------------------------------------------------
+const tmpV = new THREE.Vector3(), tmpC = new THREE.Color();
+window.renderAt = function (t) {
+  const { nt } = world.updateEnvironment(t, SKY);
+  sunLight.position.set(lerp(-34, 30, clamp(t / 40, 0, 1)), lerp(20, 34, Math.sin(clamp(t / 40, 0, 1) * Math.PI)), 18);
+  const inRoom = t < CUT;
+  sunLight.target.position.set(inRoom ? ROOM.x : 0, 0, 0); sunLight.target.updateMatrixWorld(); if (inRoom) sunLight.position.x += ROOM.x;
+  moonLamp.intensity = nt * 30; roomLight.intensity = inRoom ? 14 : 0;
+  for (const b of buildings) { b.mat.emissiveIntensity = clamp(nt * 1.1, 0, 1) * 0.95; if (b.store) b.store.material.emissiveIntensity = 0.25 + 0.75 * nt; }
+  cafeB.signMat.emissiveIntensity = 0.2 + 0.8 * nt;
+  for (const h of lampHeads) h.material.color.set(nt > 0.2 ? 0xfff0c8 : 0x6a6f78);
+  updateTrafficLights(trafficLights, t, 1);
+  for (const c of cars) { const d = c.userData; const x = ((d.x0 + d.dir * d.speed * t + 50) % 100 + 100) % 100 - 50; c.position.set(x, -0.5, d.laneZ); c.rotation.y = d.dir > 0 ? 0 : Math.PI; for (const w of d.wheels) w.rotation.y = -t * d.speed * 3; d.tail.material.color.set(0xff3b2f).multiplyScalar(0.6 + 0.4 * nt); d.lights.material.color.set(0xfff2c0).multiplyScalar(0.4 + 0.6 * nt); }
+  for (const p of peds) { placePedestrian(p, p.speed * t); animateGait(p.g, t * 7 * p.speed + p.ph, 'walk'); p.g.visible = !(t > 43 && p.rank < 0.6); }
+  for (const s of standers) { animateGait(s.g, t * 1.4 + s.ph, 'idle'); if (s.g.userData.phone) { s.g.userData.limbs.ra.rotation.x = -1.5; s.g.userData.limbs.head.rotation.x = 0.4; } s.g.visible = t < 43 || s.ph < 3; }
+  for (let i = 0; i < sprayN; i++) { const sd = spraySeeds[i]; const life = frac(t * sd.speed + sd.phase); const r = 0.1 + life * 1.3; sprayPos[i * 3] = Math.sin(sd.az) * r; sprayPos[i * 3 + 1] = 1.9 + Math.sin(life * Math.PI) * 1.4 - life * 0.2; sprayPos[i * 3 + 2] = 0.5 + Math.cos(sd.az) * r; } sprayGeo.attributes.position.needsUpdate = true;
+
+  // room details
+  room.userData.clockFace.material.color.set(0xff3b2f).multiplyScalar(t < WAKE + 1.6 ? (frac(t * 2) < 0.5 ? 1.6 : 0.5) : 0.5);
+  phoneGlow.material.color.set(0x9ff3ff).multiplyScalar(t > 16.6 && t < 17.8 ? (frac(t * 3) < 0.5 ? 2.0 : 0.3) : 0.6); roomPhone.visible = phoneGlow.visible = t < 17.8;
+  roomDoor.rotation.y = smooth((t - 21.9) / 0.9) * 1.55 * (1 - smooth((t - 24.5) / 1.0));
+  const blanket = room.children.find(c => c.userData && c.userData.blanket)?.userData.blanket; if (blanket) { const off = smooth((t - WAKE - 0.3) / 1.4); blanket.position.z = 0.5 + off * 0.9; blanket.rotation.x = -off * 0.25; }
+
+  // bodies
+  const cp = crushPose(t), yp = youPose(t); applyPose(crush, cp, t); applyPose(you, yp, t);
+  handPhone.visible = !!cp.hasPhone; coin.visible = !!cp.coin;
+  mirrorCopy(crush, reflection);
+  // the coin flies into the water, splash, glow, ring, swap
+  { const u = (t - 46.75) / 0.75; flyingCoin.visible = u > 0 && u < 1; if (flyingCoin.visible) { const from = new THREE.Vector3(FOUNT_A.x + 0.5, 1.3, FOUNT_A.z - 0.4), to = new THREE.Vector3(0, 0.7, 0.9); flyingCoin.position.lerpVectors(from, to, u); flyingCoin.position.y += Math.sin(u * Math.PI) * 1.2; flyingCoin.rotation.x = t * 18; } }
+  { const u = (t - 47.5) / 1.2; splash.material.opacity = u > 0 && u < 1 ? (1 - u) * 0.9 : 0; if (u > 0 && u < 1) { for (let i = 0; i < splashN; i++) { const s = splashSeeds[i]; splashPos[i * 3] = Math.sin(s.az) * s.v * u; splashPos[i * 3 + 1] = 0.7 + s.vy * u - 6 * u * u; splashPos[i * 3 + 2] = 0.9 + Math.cos(s.az) * s.v * u; } splashGeo.attributes.position.needsUpdate = true; } }
+  const glow = win(t, 47.6, 52.5, 1.0, 2.5); waterMat.emissiveIntensity = glow * (0.8 + 0.4 * Math.sin(t * 6)); fountainLight.intensity = glow * 40 * (1 + 2 * win(t, BOOM - 0.3, BOOM + 0.8, 0.3, 0.8));
+  { const u = (t - BOOM) / 1.6; ring.material.opacity = u > 0 && u < 1 ? (1 - u) * 0.9 : 0; ring.scale.setScalar(1 + Math.max(0, u) * 10); }
+  // mind orbs: above the heads, swapping along an arc at the boom
+  const headA = tmpV.set(0, 2.9, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), crush.rotation.y).add(crush.position).clone(), headB = new THREE.Vector3(0, 2.9, 0).add(you.position);
+  const sw = smooth((t - (BOOM - 0.5)) / 1.0); const arc = Math.sin(sw * Math.PI) * 1.6;
+  orbYou.position.lerpVectors(headA, headB, sw); orbYou.position.y += arc; orbCrush.position.lerpVectors(headB, headA, sw); orbCrush.position.y += arc;
+  orbYou.visible = crush.visible; orbCrush.visible = you.visible && t >= CUT; const orbS = 0.7 + 0.1 * Math.sin(t * 3) + sw * (1 - sw) * 1.2; orbYou.scale.setScalar(orbS); orbCrush.scale.setScalar(orbS);
+  orbYou.material.opacity = 0.9 * win(t, WAKE + 0.5, 61, 1.0, 0.1);
+  for (const z of zzz) { const life = frac(t * 0.45 + z.k / 3); z.s.position.set(BED_X + 0.4 + life * 0.6, BED_TOP + 0.5 + life * 1.6, BED_Z - 1.6 + life * 0.3); z.s.scale.setScalar(0.7 + life * 0.9); z.s.material.opacity = win(t, -1, WAKE + 0.3, 0.1, 0.6) * win(life, 0, 1, 0.15, 0.35) * 0.9; }
+
+  camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.08, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.04, kf(t, CAM.z));
+  camera.lookAt(kf(t, CAM.tx), kf(t, CAM.ty), kf(t, CAM.tz));
+  renderer.render(scene, camera);
+  overlay.update(t); updateHud(t);
+  return true;
+};
+window.renderAt(0);
+window.__sceneReady = true;
+</script>
+</body>
+</html>
