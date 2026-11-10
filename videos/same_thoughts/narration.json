@@ -1,0 +1,19 @@
+{
+  "title": "What if everyone shared the same thoughts?",
+  "output": "what_if_everyone_shared_the_same_thoughts_9x16.mp4",
+  "poster_time": 27,
+  "voice": "am_onyx",
+  "engine": "kokoro",
+  "speed_factor": 0.95,
+  "lang": "en-us",
+  "whisper": 0,
+  "lines": [
+    {"id": 1, "start": 0.8,  "text": "What if everyone shared the same thoughts?"},
+    {"id": 2, "start": 6.0,  "text": "It starts on an ordinary morning. You step out of the café, think coffee, and every head on the street thinks it too. One mind. Eight billion people."},
+    {"id": 3, "start": 15.0, "text": "By mid-morning there are no secrets. The lie you were about to tell dies before you say it. Nobody argues, because everyone already knows how it ends."},
+    {"id": 4, "start": 24.0, "text": "By noon the city moves like one body. Traffic flows without a single light. The crowd walks in step. And the silence is strange."},
+    {"id": 5, "start": 33.0, "text": "By sunset you notice what's missing. No surprises. No jokes, because everyone knows the punchline. Every song in your head is the same song."},
+    {"id": 6, "start": 43.5, "text": "At night, the one thought turns dark. One fear spreads in a second. One nightmare, eight billion sleepers."},
+    {"id": 7, "start": 52.5, "text": "So, would you keep the one mind, or fight for your own?"}
+  ]
+}

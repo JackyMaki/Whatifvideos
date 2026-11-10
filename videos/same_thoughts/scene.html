@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What if everyone shared the same thoughts — street-level low poly scene</title>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="ui">
+  <div id="title" class="abs">What if everyone shared the <em>same thoughts</em>?</div>
+  <div id="hud" class="abs"><div id="hudLabel" class="label">Minds in sync</div><div id="hudValue">0%</div><div id="hudSub" class="label">06:00 · Sunrise</div></div>
+  <div id="cap" class="abs"><div id="capInner"></div></div>
+  <div id="footer" class="abs">A what‑if, every day</div>
+</div>
+
+<script type="module">
+import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+import { L, lam, glowMat, solid, roundedBox, buildStreets, buildBuildings, addStorefront, buildStreetFurniture, updateTrafficLights, person, animateGait, makePedestrians, placePedestrian, buildCars } from '../../render/city.js';
+injectBaseCss();
+
+const world = createWorld({ seed: 8181, canvas: document.getElementById('c'), ground: 'none', shadows: true, shadowExtent: 34, fog: 0.014, clouds: 9 });
+const { rng, R, renderer, scene, camera, hemi, sunLight } = world;
+const SKY = { ...DAY,
+  SKY: {
+    top: [[0, '#3a4f7e'], [7, '#5f9be0'], [24, '#4f8fdc'], [34, '#5a5f9e'], [39, '#4a3a7a'], [44, '#1b1f4a'], [49, '#070a20'], [60, '#06081c']],
+    mid: [[0, '#9a7aa6'], [7, '#a9cdf0'], [24, '#a6cdf2'], [34, '#c89ab0'], [39, '#ff8a5a'], [44, '#5a3d6e'], [49, '#1c1a3a'], [60, '#1a1a38']],
+    bot: [[0, '#f0a878'], [7, '#dde9f3'], [24, '#e2eef6'], [34, '#ffc89a'], [39, '#ff6a3d'], [44, '#6a3d6e'], [49, '#2a2446'], [60, '#282444']],
+  },
+  hemiSky: [[0, '#8a7ab8'], [7, '#bfd8ff'], [34, '#e0b0b0'], [44, '#44508e'], [60, '#3c4886']],
+  hemiGround: [[0, '#4a3a3a'], [7, '#55565a'], [44, '#232a44'], [60, '#1f2640']] };
+
+// ---------------------------------------------------------------------------
+// Timeline
+// ---------------------------------------------------------------------------
+const SYNC = 7.2;                                   // the moment every mind locks together
+const sync = t => kf(t, [[SYNC, 0], [SYNC + 2.6, 1]]);
+const stepIn = t => kf(t, [[24.0, 0], [25.5, 1]]);  // the crowd falls into step
+const dark = t => kf(t, [[43.5, 0], [45.0, 1], [52.5, 1], [54.0, 0]]);
+// integral of (1 - stepIn) from 24 to t: how much of the old pace is still in a walker's distance
+const blendIntegral = t => { const u = clamp((t - 24) / 1.5, 0, 1); return 1.5 * (u - (u * u * u - u * u * u * u / 2)); };
+
+// ---------------------------------------------------------------------------
+// City
+// ---------------------------------------------------------------------------
+buildStreets(world);
+const buildings = buildBuildings(world, { nearHeights: [5, 9], sideHeights: [5, 8.5] });
+const { lampHeads, trafficLights, benches } = buildStreetFurniture(world);
+const cars = buildCars(world, 12);
+for (const [bx, nm, col, aw] of [[3, 'BAKERY', '#c98a2e', 0xa86f1e], [-10, 'BOOKS', '#7a4a9a', 0x5a3a7a], [15, 'PHARMACY', '#2f7fbf', 0x2f5f8f]]) { const b = buildings.filter(b => b.row === 'shop' && !b.store).sort((a, c) => Math.abs(a.x - bx) - Math.abs(c.x - bx))[0]; if (b) b.store = addStorefront(world, b, { name: nm, color: col, awning: aw }); }
+// the café: the left-side building nearest the plaza, with a door, awning and sign on its plaza face
+const cafeB = buildings.filter(b => b.side === -1).sort((a, b) => Math.abs(a.z - 2) - Math.abs(b.z - 2))[0];
+const DOOR_X = cafeB.x + cafeB.w / 2, DOOR_Z = cafeB.z + 0.4;
+{
+  const frame = solid(new THREE.BoxGeometry(0.16, 2.3, 1.3), lam(0x3a3a40)); frame.position.set(DOOR_X + 0.02, 0.65, DOOR_Z); scene.add(frame);
+  const glass = solid(new THREE.BoxGeometry(0.1, 1.6, 3.2), lam(0x4a5466)); glass.position.set(DOOR_X + 0.02, 0.5, DOOR_Z - 2.6); scene.add(glass);
+  const aw = solid(new THREE.BoxGeometry(1.4, 0.1, 5.4), lam(0x2f6f4e)); aw.position.set(DOOR_X + 0.7, 2.25, DOOR_Z - 1.4); scene.add(aw);
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 200; const g = c.getContext('2d'); g.fillStyle = '#2f6f4e'; g.fillRect(0, 0, 1024, 200); g.fillStyle = '#f4efe6'; g.font = '700 118px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('CAFÉ', 512, 96);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = solid(new THREE.BoxGeometry(0.22, 0.95, 4.8), new THREE.MeshLambertMaterial({ color: 0x2f6f4e })); sign.position.set(DOOR_X + 0.12, 3.0, DOOR_Z - 1.4); scene.add(sign);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 0.94), new THREE.MeshLambertMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.2 })); face.rotation.y = Math.PI / 2; face.position.set(DOOR_X + 0.24, 3.0, DOOR_Z - 1.4); scene.add(face); cafeB.signMat = face.material;
+  for (const dz of [-2.2, -0.9]) { const tbl = solid(new THREE.CylinderGeometry(0.45, 0.45, 0.06, 12), lam(0xe8e2d6)); tbl.position.set(DOOR_X + 1.2, 0.3, DOOR_Z + dz - 1.6); scene.add(tbl); const leg = solid(new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8), lam(0x3a3f48)); leg.position.set(DOOR_X + 1.2, -0.1, DOOR_Z + dz - 1.6); scene.add(leg); for (const sx of [-0.7, 0.7]) { const ch = solid(roundedBox(0.45, 0.45, 0.45, 0.3), lam(0x3a3f48)); ch.position.set(DOOR_X + 1.2 + sx, -0.28, DOOR_Z + dz - 1.6); scene.add(ch); } }
+}
+const frontDoor = new THREE.Group(); frontDoor.position.set(DOOR_X + 0.1, -0.5, DOOR_Z - 0.55); scene.add(frontDoor);
+const leaf = solid(new THREE.BoxGeometry(0.08, 2.1, 1.1), lam(0x5a3a2a)); leaf.position.set(0, 1.05, 0.55); frontDoor.add(leaf);
+// fountain in the plaza centre
+const fountain = new THREE.Group(); fountain.position.set(0, -0.5, 0.5); scene.add(fountain);
+{
+  const basin = solid(new THREE.CylinderGeometry(2.4, 2.6, 0.7, 16), lam(0xb9b3a8)); basin.position.y = 0.35; fountain.add(basin);
+  const water = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.1, 16), new THREE.MeshLambertMaterial({ color: 0x5fa8d8, transparent: true, opacity: 0.85 })); water.position.y = 0.66; fountain.add(water);
+  const column = solid(new THREE.CylinderGeometry(0.3, 0.45, 1.6, 10), lam(0xb9b3a8)); column.position.y = 1.3; fountain.add(column);
+  const bowl = solid(new THREE.CylinderGeometry(0.9, 0.5, 0.3, 12), lam(0xb9b3a8)); bowl.position.y = 2.1; fountain.add(bowl);
+}
+const spray = []; { const n = 70; const pos = new Float32Array(n * 3); const seeds = []; for (let i = 0; i < n; i++) seeds.push({ az: R(0, 6.28), phase: rng(), speed: R(0.6, 0.9) }); const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xcfe9ff, size: 0.22, sizeAttenuation: true, transparent: true, opacity: 0.8, depthWrite: false, map: radialTexture(), alphaTest: 0.01 })); scene.add(pts); spray.push({ pts, pos, seeds }); }
+
+// ---------------------------------------------------------------------------
+// Thought bubbles
+// ---------------------------------------------------------------------------
+function bubbleTexture(icon, tint = '#ffffff', red = false) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = red ? 'rgba(255,70,60,0.96)' : 'rgba(255,255,255,0.96)';
+  for (const [x, y, r] of [[128, 112, 78], [78, 126, 52], [180, 126, 52], [110, 70, 46], [150, 70, 44]]) { g.beginPath(); g.arc(x, y, r, 0, 6.28); g.fill(); }
+  g.beginPath(); g.arc(96, 212, 14, 0, 6.28); g.fill(); g.beginPath(); g.arc(74, 240, 8, 0, 6.28); g.fill();
+  g.fillStyle = red ? '#fff' : tint; g.strokeStyle = red ? '#fff' : tint; g.lineWidth = 10; g.lineCap = 'round';
+  const cx = 128, cy = 110;
+  if (icon === 'coffee') { g.fillRect(cx - 34, cy - 20, 58, 50); g.beginPath(); g.arc(cx + 34, cy + 4, 16, -1.2, 1.2); g.stroke(); for (const dx of [-18, 0, 18]) { g.beginPath(); g.moveTo(cx + dx - 6, cy - 32); g.quadraticCurveTo(cx + dx + 6, cy - 44, cx + dx - 4, cy - 56); g.stroke(); } }
+  else if (icon === 'heart') { g.beginPath(); g.moveTo(cx, cy + 36); g.bezierCurveTo(cx - 70, cy - 10, cx - 36, cy - 60, cx, cy - 26); g.bezierCurveTo(cx + 36, cy - 60, cx + 70, cy - 10, cx, cy + 36); g.fill(); }
+  else if (icon === 'note') { g.beginPath(); g.ellipse(cx - 18, cy + 28, 20, 14, -0.4, 0, 6.28); g.fill(); g.beginPath(); g.ellipse(cx + 30, cy + 18, 20, 14, -0.4, 0, 6.28); g.fill(); g.fillRect(cx - 4, cy - 44, 10, 72); g.fillRect(cx + 44, cy - 54, 10, 72); g.fillRect(cx - 4, cy - 54, 58, 14); }
+  else if (icon === 'clock') { g.beginPath(); g.arc(cx, cy, 42, 0, 6.28); g.stroke(); g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy - 28); g.moveTo(cx, cy); g.lineTo(cx + 20, cy + 8); g.stroke(); }
+  else if (icon === 'sun') { g.beginPath(); g.arc(cx, cy, 26, 0, 6.28); g.fill(); for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; g.beginPath(); g.moveTo(cx + Math.cos(a) * 38, cy + Math.sin(a) * 38); g.lineTo(cx + Math.cos(a) * 54, cy + Math.sin(a) * 54); g.stroke(); } }
+  else if (icon === 'pizza') { g.beginPath(); g.moveTo(cx, cy + 50); g.lineTo(cx - 44, cy - 34); g.quadraticCurveTo(cx, cy - 56, cx + 44, cy - 34); g.closePath(); g.fill(); g.fillStyle = red ? '#ffb0a8' : '#d63a2f'; for (const [dx, dy] of [[-12, -14], [14, -10], [0, 14]]) { g.beginPath(); g.arc(cx + dx, cy + dy, 7, 0, 6.28); g.fill(); } }
+  else if (icon === 'star') { g.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5; const r = k % 2 ? 22 : 50; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } g.closePath(); g.fill(); }
+  else if (icon === 'alert') { g.fillRect(cx - 9, cy - 52, 18, 62); g.beginPath(); g.arc(cx, cy + 34, 12, 0, 6.28); g.fill(); }
+  else if (icon === 'zzz') { g.font = '700 70px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('z z', cx, cy); }
+  else if (icon === 'phone') { g.fillRect(cx - 24, cy - 44, 48, 88); g.fillStyle = red ? '#ff6a60' : '#9ff3ff'; g.fillRect(cx - 18, cy - 36, 36, 62); }
+  else if (icon === 'car') { g.fillRect(cx - 50, cy - 4, 100, 30); g.fillRect(cx - 28, cy - 30, 56, 30); g.fillStyle = red ? '#ff6a60' : '#333'; g.beginPath(); g.arc(cx - 28, cy + 30, 12, 0, 6.28); g.fill(); g.beginPath(); g.arc(cx + 28, cy + 30, 12, 0, 6.28); g.fill(); }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex;
+}
+const ICONS = ['coffee', 'heart', 'note', 'clock', 'sun', 'pizza', 'phone', 'car', 'star'];
+const TEX = Object.fromEntries(ICONS.map(k => [k, bubbleTexture(k, '#2b2f3a')]));
+TEX.alertRed = bubbleTexture('alert', '#fff', true); TEX.zzz = bubbleTexture('zzz', '#2b2f3a'); TEX.starGold = bubbleTexture('star', '#e0a52e');
+const bubbles = [];
+function addBubble(target, offsetY = 2.75) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX[ICONS[Math.floor(rng() * (ICONS.length - 1))]], transparent: true, depthWrite: false })); s.scale.set(1.1, 1.1, 1); scene.add(s); const b = { s, target, offsetY, own: s.material.map, ph: R(0, 6.28) }; bubbles.push(b); return b; }
+// what everyone thinks, per act
+const sharedIcon = t => t < 24 ? 'coffee' : t < 33 ? 'clock' : t < 43.5 ? 'note' : t < 52.5 ? 'alertRed' : 'zzz';
+
+// ---------------------------------------------------------------------------
+// People
+// ---------------------------------------------------------------------------
+const peds = makePedestrians(world, [
+  { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: 1, count: 9, speed: 1.3 }, { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: -1, count: 8, speed: 1.15 },
+  { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: 1, count: 7, speed: 1.2 }, { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: -1, count: 7, speed: 1.35 },
+  { axis: 'z', at: L.sideX - 1.5, from: -18, to: 15, dir: -1, count: 3, speed: 1.2 },
+], { gap: 2.8, laneOffset: 0.45 });
+for (const p of peds) { p.b = addBubble(p.g); p.syncAt = SYNC + 0.6 + R(0, 1.8); }
+// standers around the plaza, in facing pairs (they turn to each other once minds sync)
+const PAIRS = [[[-3.6, -3.4], [-2.2, -3.0]], [[3.4, -3.0], [4.8, -2.4]], [[5.6, 3.8], [6.6, 5.0]], [[-7.0, -1.0], [-6.2, 0.4]], [[7.4, -5.6], [8.3, -4.4]]];
+const standers = [];
+PAIRS.forEach(([a, b], i) => { for (const [k, [x, z]] of [[0, a], [1, b]]) { const other = k === 0 ? b : a; const g = person(world, k === 0 && i % 2 === 0 ? { phone: true } : {}); g.position.set(x, -0.5, z); g.rotation.y = R(0, 6.28); scene.add(g); standers.push({ g, x, z, ry0: g.rotation.y, face: Math.atan2(other[0] - x, other[1] - z), ph: R(0, 6.28), b: addBubble(g), syncAt: SYNC + Math.hypot(x + 5.5, z - 7.6) * 0.14 }); } });
+// hero: out of the café, to the bench at (-5.5, 7.6), later walks away alone
+const hero = person(world, { skin: 0xf1c27d, shirt: 0xf4f1ea, pants: 0x2b3a55, hair: 0x2a1a0e, jacket: 0x7a3a2e, hairStyle: 'short', bag: false }); scene.add(hero);
+const cup = solid(new THREE.CylinderGeometry(0.09, 0.07, 0.24, 10), lam(0xf4efe6)); cup.position.set(0, -0.78, 0.04); hero.userData.limbs.ra.add(cup); const lid = solid(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 10), lam(0x3a2a1a)); lid.position.y = 0.13; cup.add(lid);
+const heroB = addBubble(hero); heroB.own = TEX.coffee;
+const BENCH = new THREE.Vector3(-5.5, -0.5, 7.6);
+const lampGlow = new THREE.PointLight(0x9fb4ff, 0, 26, 1.4); lampGlow.position.set(-4, 5.5, 6); scene.add(lampGlow);
+
+// ---------------------------------------------------------------------------
+// Camera & overlay
+// ---------------------------------------------------------------------------
+const CAM = {
+  x: [[0, -1.5], [5.5, -1.5], [7, -2.0], [14.5, -2.4], [16, 0.8], [23, 0.4], [25, 0.4], [32, 0.4], [34.5, -2.6], [42.5, -2.9], [44.5, 0.6], [52, 0.6], [54, -2.0], [60, 1.5]],
+  y: [[0, 2.2], [5.5, 2.3], [7, 2.2], [14.5, 2.2], [16, 3.0], [23, 2.9], [25, 6.2], [32, 6.0], [34.5, 2.1], [42.5, 2.1], [44.5, 3.0], [52, 2.9], [54, 2.4], [60, 2.6]],
+  z: [[0, 7.5], [5.5, 9.5], [7, 13.0], [14.5, 12.5], [16, 10.5], [23, 10.0], [25, 16.5], [32, 15.5], [34.5, 12.0], [42.5, 11.5], [44.5, 11.5], [52, 11.0], [54, 13.5], [60, 15.0]],
+  tx: [[0, -9.5], [5.5, -7.5], [7, -5.5], [14.5, -5.2], [16, 0.2], [23, 0.2], [25, 0], [32, 0], [34.5, -5.5], [42.5, -5.5], [44.5, -1.5], [52, -1.5], [54, -4.0], [60, 4.5]],
+  ty: [[0, 1.2], [5.5, 1.3], [7, 1.6], [14.5, 1.7], [16, 1.8], [23, 1.8], [25, 1.0], [32, 1.0], [34.5, 1.8], [42.5, 1.9], [44.5, 2.6], [52, 2.6], [54, 1.6], [60, 1.4]],
+  tz: [[0, 1.0], [5.5, 4.0], [7, 7.0], [14.5, 7.0], [16, -1.5], [23, -1.0], [25, -8], [32, -8], [34.5, 7.4], [42.5, 7.4], [44.5, 1.5], [52, 1.5], [54, 6.5], [60, 6.0]],
+};
+const overlay = createOverlay({ highlight: /(think coffee|one mind|eight billion people|no secrets|dies before you say it|already knows how it ends|like one body|without a single light|walks in step|the silence is strange|no surprises|knows the punchline|the same song|turns dark|eight billion sleepers|the one mind|your own)/gi });
+const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
+function updateHud(t) {
+  const s = sync(t) * 100; const endAlone = t >= 55.5;
+  hud.value.textContent = endAlone ? 'All but one' : s <= 0 ? '0%' : s < 99.95 ? `${s.toFixed(1)}%` : '100%';
+  hud.value.style.fontSize = endAlone ? '88px' : '';
+  hud.value.style.color = t >= 43.5 && t < 52.5 ? '#ff7a70' : '#fff';
+  hud.label.textContent = t >= 52.5 ? 'Minds in sync · one day later' : 'Minds in sync';
+}
+
+// ---------------------------------------------------------------------------
+// Hero blocking
+// ---------------------------------------------------------------------------
+function heroPose(t) {
+  if (t < 1.0) return { pos: new THREE.Vector3(DOOR_X - 0.6, -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'idle', cup: true };
+  if (t < 5.2) { const u = smooth((t - 1.0) / 4.2); return { pos: new THREE.Vector3(lerp(DOOR_X - 0.6, BENCH.x - 0.3, u), -0.5, lerp(DOOR_Z, BENCH.z - 0.9, u)), ry: Math.PI / 2 + u * 0.3, mode: 'walk', phase: t * 9, cup: true }; }
+  if (t < 6.2) { const u = smooth((t - 5.2) / 1.0); return { pos: new THREE.Vector3(BENCH.x - 0.3, -0.5 + u * 0.02, BENCH.z - 0.9 + u * 0.9), ry: lerp(Math.PI / 2 + 0.3, 0, u), mode: 'turn', cup: true }; }
+  if (t < 53.5) return { pos: new THREE.Vector3(BENCH.x - 0.3, -0.5, BENCH.z), ry: 0, mode: 'sit', cup: t < 40, sip: t > 8 && t < 9.5 || t > 36 && t < 37.5, lookUp: t >= 43.5 && t < 52.5, lookDown: t >= 33 && t < 43.5 };
+  if (t < 55.0) { const u = smooth((t - 53.5) / 1.5); return { pos: new THREE.Vector3(BENCH.x - 0.3, -0.5, BENCH.z - 0.9 * u), ry: lerp(0, Math.PI / 2, u), mode: u < 0.5 ? 'sit' : 'idle' }; }
+  const u = clamp((t - 55.0) / 5.0, 0, 1); return { pos: new THREE.Vector3(BENCH.x - 0.3 + u * 9.5, -0.5, BENCH.z - 0.9 - u * 1.5), ry: Math.PI / 2 + 0.15, mode: 'walk', phase: t * 9 };
+}
+const SEAT_Y = -0.78;   // hips on the bench seat (0.78 is hip height in the person model)
+function poseLimbs(g, p, t) {
+  const Lb = g.userData.limbs; g.position.copy(p.pos); g.rotation.y = p.ry;
+  if (p.mode === 'walk') animateGait(g, p.phase, 'walk');
+  else if (p.mode === 'sit') { Lb.ll.rotation.x = -1.5; Lb.rl.rotation.x = -1.5; Lb.la.rotation.x = -0.6; Lb.ra.rotation.x = p.cup ? (p.sip ? -2.4 : -1.0) : -0.6; Lb.la.rotation.z = 0.05; Lb.ra.rotation.z = p.sip ? -0.5 : -0.05; g.userData.torso.rotation.x = 0.05; Lb.head.rotation.x = p.sip ? -0.2 : p.lookUp ? -0.45 : p.lookDown ? 0.4 : 0; Lb.head.rotation.y = Math.sin(t * 0.5) * 0.25; g.position.y = SEAT_Y; }
+  else if (p.mode === 'turn') { animateGait(g, t * 1.4, 'idle'); Lb.ra.rotation.x = -1.0; }
+  else { animateGait(g, t * 1.4, 'idle'); if (p.cup) { Lb.ra.rotation.x = p.sip ? -2.4 : -1.1; Lb.ra.rotation.z = p.sip ? -0.5 : -0.04; } }
+  if (p.mode === 'walk' && p.cup) { Lb.ra.rotation.x = -1.1; Lb.ra.rotation.z = -0.04; }
+  cup.visible = !!p.cup;
+}
+
+
+// ---------------------------------------------------------------------------
+// Per-frame update
+// ---------------------------------------------------------------------------
+const tmpV = new THREE.Vector3(), tmpC = new THREE.Color();
+function setBubble(b, t, pos, iconOverride) {
+  const si = sync(t); const u = b.syncAt == null ? 1 : clamp((t - b.syncAt) / 0.8, 0, 1);
+  const shared = iconOverride || sharedIcon(t);
+  const want = u >= 0.5 ? TEX[shared] : b.own;
+  if (b.s.material.map !== want) { b.s.material.map = want; b.s.material.needsUpdate = true; }
+  const pop = u > 0 && u < 1 ? 1 + Math.sin(u * Math.PI) * 0.35 : 1;
+  const dk = dark(t); const pulse = 1 + dk * 0.12 * Math.sin(t * 2 * Math.PI * 1.2);
+  b.s.position.set(pos.x + 0.35, pos.y + b.offsetY + Math.sin(t * 1.3 + (u >= 1 ? 0 : b.ph)) * 0.06, pos.z);
+  b.s.scale.set(1.1 * pop * pulse, 1.1 * pop * pulse, 1);
+  b.s.material.opacity = win(t, 0.6, 61, 1.0, 0.1) * (t >= 52.5 && b !== heroB ? 0.85 : 1);
+}
+window.renderAt = function (t) {
+  const { nt } = world.updateEnvironment(t, SKY);
+  sunLight.position.set(lerp(-34, 30, clamp(t / 40, 0, 1)), lerp(20, 34, Math.sin(clamp(t / 40, 0, 1) * Math.PI)), 18);
+  const si = sync(t), st = stepIn(t), dk = dark(t);
+  lampGlow.intensity = nt * 30;
+
+  // --- city ---
+  for (const b of buildings) { b.mat.emissiveIntensity = clamp(nt * 1.1, 0, 1) * 0.95 * (1 - dk * 0.5 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.2))); if (b.store) b.store.material.emissiveIntensity = 0.25 + 0.75 * nt; }
+  cafeB.signMat.emissiveIntensity = 0.2 + 0.8 * nt;
+  for (const h of lampHeads) h.material.color.set(nt > 0.2 ? 0xfff0c8 : 0x6a6f78).multiplyScalar(1 - dk * 0.35 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.2)));
+  updateTrafficLights(trafficLights, t, 1 - st);
+  for (const c of cars) { const d = c.userData; const x = ((d.x0 + d.dir * d.speed * t + 50) % 100 + 100) % 100 - 50; c.position.set(x, -0.5, d.laneZ); c.rotation.y = d.dir > 0 ? 0 : Math.PI; for (const w of d.wheels) w.rotation.y = -t * d.speed * 3; d.tail.material.color.set(0xff3b2f).multiplyScalar(0.6 + 0.4 * nt); d.lights.material.color.set(0xfff2c0).multiplyScalar(0.4 + 0.6 * nt); }
+  for (const s of spray) { for (let i = 0; i < s.seeds.length; i++) { const sd = s.seeds[i]; const life = frac(t * sd.speed + sd.phase); const r = 0.1 + life * 1.3; s.pos[i * 3] = Math.sin(sd.az) * r; s.pos[i * 3 + 1] = 1.9 + Math.sin(life * Math.PI) * 1.4 - life * 0.2; s.pos[i * 3 + 2] = 0.5 + Math.cos(sd.az) * r; } s.pts.geometry.attributes.position.needsUpdate = true; }
+
+  // --- pedestrians: own pace, then one pace and one step ---
+  const common = 1.25;
+  for (const p of peds) {
+    const dist = p.speed * Math.min(t, 24) + (t > 24 ? common * (t - 24) + (p.speed - common) * blendIntegral(t) : 0);
+    placePedestrian(p, dist);
+    const ownPhase = t * 7 * p.speed + p.ph, onePhase = t * 7 * common; animateGait(p.g, lerp(ownPhase, onePhase, st), 'walk');
+    if (dk > 0) p.g.userData.limbs.head.rotation.x = -0.4 * dk;
+    setBubble(p.b, t, p.g.position);
+  }
+  // --- standers: random stances, then they face each other and nod; at night they look up ---
+  for (const s of standers) {
+    const u = clamp((t - s.syncAt) / 1.2, 0, 1); const turn = smooth(clamp((t - 15.0) / 1.6, 0, 1));
+    s.g.rotation.y = lerp(s.ry0, s.face, turn); animateGait(s.g, t * 1.4 + s.ph, 'idle');
+    const Lb = s.g.userData.limbs; if (s.g.userData.phone) { Lb.ra.rotation.x = -1.5 * (1 - u); Lb.head.rotation.x = 0.4 * (1 - u); }
+    if (turn > 0 && t < 24) Lb.head.rotation.x = Math.sin(t * 2.4 + s.ph) * 0.12 * turn;      // nodding along
+    if (t >= 33 && t < 43.5) Lb.head.rotation.x = 0.35 * win(t, 33, 43.5, 1.5, 1.0);                // heads down
+    if (dk > 0) Lb.head.rotation.x = -0.45 * dk;                                                    // all look up
+    setBubble(s.b, t, s.g.position);
+  }
+
+  // --- hero ---
+  const hp = heroPose(t); poseLimbs(hero, hp, t);
+  frontDoor.rotation.y = -smooth((t - 0.4) / 0.9) * 1.6 * (1 - smooth((t - 3.2) / 1.2));
+  heroB.syncAt = SYNC; setBubble(heroB, t, hero.position, t >= 54.2 ? 'starGold' : null);
+  if (t >= 54.2) heroB.offsetY = 2.75;
+
+  camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.12, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.06, kf(t, CAM.z));
+  camera.lookAt(kf(t, CAM.tx), kf(t, CAM.ty), kf(t, CAM.tz));
+  renderer.render(scene, camera);
+  overlay.update(t); updateHud(t);
+  return true;
+};
+window.renderAt(0);
+window.__sceneReady = true;
+</script>
+</body>
+</html>
