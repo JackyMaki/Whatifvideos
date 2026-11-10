@@ -10,3 +10,4 @@
 - Story: every episode has a real beginning, middle and end. The character enters the world believably (walks out of a door, wakes up, arrives), each scene follows from the last, and the ending is a motion or a choice, not a freeze.
 - Process for every video: plan the beats, build, then QA a dense contact sheet (every 2-3 s) for anything out of place (clipping, overlaps, text collisions, floating or intersecting objects), fix, re-render, and only then send.
 - The question title is on screen only for the opening ~5 s (while it is spoken), then fades out. Never for the whole video.
+- Characters interact physically: doors swing open (outward, pushed by a hand) before anyone walks through, people back up to a bench and lower into the seat over ~1 s, objects are set down, never teleport or pass through geometry.

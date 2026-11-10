@@ -121,18 +121,19 @@ const hero = person(world, { skin: 0xf1c27d, shirt: 0xf4f1ea, pants: 0x2b3a55, h
 const cup = solid(new THREE.CylinderGeometry(0.09, 0.07, 0.24, 10), lam(0xf4efe6)); cup.position.set(0, -0.78, 0.04); hero.userData.limbs.ra.add(cup); const lid = solid(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 10), lam(0x3a2a1a)); lid.position.y = 0.13; cup.add(lid);
 const heroB = addBubble(hero); heroB.own = TEX.coffee;
 const BENCH = new THREE.Vector3(-5.5, -0.5, 7.6);
+const benchCup = solid(new THREE.CylinderGeometry(0.09, 0.07, 0.24, 10), lam(0xf4efe6)); benchCup.position.set(BENCH.x + 0.45, 0.12, BENCH.z + 0.05); benchCup.visible = false; scene.add(benchCup); const benchLid = solid(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 10), lam(0x3a2a1a)); benchLid.position.y = 0.13; benchCup.add(benchLid);
 const lampGlow = new THREE.PointLight(0x9fb4ff, 0, 26, 1.4); lampGlow.position.set(-4, 5.5, 6); scene.add(lampGlow);
 
 // ---------------------------------------------------------------------------
 // Camera & overlay
 // ---------------------------------------------------------------------------
 const CAM = {
-  x: [[0, -1.5], [5.5, -1.5], [7, -2.0], [14.5, -2.4], [16, 0.8], [23, 0.4], [25, 0.4], [32, 0.4], [34.5, -2.6], [42.5, -2.9], [44.5, 0.6], [52, 0.6], [54, -2.0], [60, 1.5]],
-  y: [[0, 2.2], [5.5, 2.3], [7, 2.2], [14.5, 2.2], [16, 3.0], [23, 2.9], [25, 6.2], [32, 6.0], [34.5, 2.1], [42.5, 2.1], [44.5, 3.0], [52, 2.9], [54, 2.4], [60, 2.6]],
-  z: [[0, 7.5], [5.5, 9.5], [7, 13.0], [14.5, 12.5], [16, 10.5], [23, 10.0], [25, 16.5], [32, 15.5], [34.5, 12.0], [42.5, 11.5], [44.5, 11.5], [52, 11.0], [54, 13.5], [60, 15.0]],
-  tx: [[0, -9.5], [5.5, -7.5], [7, -5.5], [14.5, -5.2], [16, 0.2], [23, 0.2], [25, 0], [32, 0], [34.5, -5.5], [42.5, -5.5], [44.5, -1.5], [52, -1.5], [54, -4.0], [60, 4.5]],
-  ty: [[0, 1.2], [5.5, 1.3], [7, 1.6], [14.5, 1.7], [16, 1.8], [23, 1.8], [25, 1.0], [32, 1.0], [34.5, 1.8], [42.5, 1.9], [44.5, 2.6], [52, 2.6], [54, 1.6], [60, 1.4]],
-  tz: [[0, 1.0], [5.5, 4.0], [7, 7.0], [14.5, 7.0], [16, -1.5], [23, -1.0], [25, -8], [32, -8], [34.5, 7.4], [42.5, 7.4], [44.5, 1.5], [52, 1.5], [54, 6.5], [60, 6.0]],
+  x: [[0, -4.5], [5.5, -3.0], [7, -2.0], [14.5, -2.4], [16, 0.8], [23, 0.4], [25, 0.4], [32, 0.4], [34.5, -2.6], [42.5, -2.9], [44.5, 0.6], [52, 0.6], [54, -2.0], [60, 1.5]],
+  y: [[0, 1.9], [5.5, 2.1], [7, 2.2], [14.5, 2.2], [16, 3.0], [23, 2.9], [25, 6.2], [32, 6.0], [34.5, 2.1], [42.5, 2.1], [44.5, 3.0], [52, 2.9], [54, 2.4], [60, 2.6]],
+  z: [[0, 6.5], [5.5, 10.0], [7, 13.0], [14.5, 12.5], [16, 10.5], [23, 10.0], [25, 16.5], [32, 15.5], [34.5, 12.0], [42.5, 11.5], [44.5, 11.5], [52, 11.0], [54, 13.5], [60, 15.0]],
+  tx: [[0, -10.5], [5.5, -7.0], [7, -5.5], [14.5, -5.2], [16, 0.2], [23, 0.2], [25, 0], [32, 0], [34.5, -5.5], [42.5, -5.5], [44.5, -1.5], [52, -1.5], [54, -4.0], [60, 4.5]],
+  ty: [[0, 0.5], [5.5, 0.9], [7, 1.6], [14.5, 1.7], [16, 1.8], [23, 1.8], [25, 1.0], [32, 1.0], [34.5, 1.8], [42.5, 1.9], [44.5, 2.6], [52, 2.6], [54, 1.6], [60, 1.4]],
+  tz: [[0, 2.4], [5.5, 5.0], [7, 7.0], [14.5, 7.0], [16, -1.5], [23, -1.0], [25, -8], [32, -8], [34.5, 7.4], [42.5, 7.4], [44.5, 1.5], [52, 1.5], [54, 6.5], [60, 6.0]],
 };
 const overlay = createOverlay({ highlight: /(think coffee|one mind|eight billion people|no secrets|dies before you say it|already knows how it ends|like one body|without a single light|walks in step|the silence is strange|no surprises|knows the punchline|the same song|turns dark|eight billion sleepers|the one mind|your own)/gi });
 const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
@@ -148,25 +149,34 @@ function updateHud(t) {
 // Hero blocking
 // ---------------------------------------------------------------------------
 function heroPose(t) {
-  if (t < 1.0) return { pos: new THREE.Vector3(DOOR_X - 0.6, -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'idle', cup: true };
-  if (t < 5.2) { const u = smooth((t - 1.0) / 4.2); return { pos: new THREE.Vector3(lerp(DOOR_X - 0.6, BENCH.x - 0.3, u), -0.5, lerp(DOOR_Z, BENCH.z - 0.9, u)), ry: Math.PI / 2 + u * 0.3, mode: 'walk', phase: t * 9, cup: true }; }
-  if (t < 6.2) { const u = smooth((t - 5.2) / 1.0); return { pos: new THREE.Vector3(BENCH.x - 0.3, -0.5 + u * 0.02, BENCH.z - 0.9 + u * 0.9), ry: lerp(Math.PI / 2 + 0.3, 0, u), mode: 'turn', cup: true }; }
-  if (t < 53.5) return { pos: new THREE.Vector3(BENCH.x - 0.3, -0.5, BENCH.z), ry: 0, mode: 'sit', cup: t < 40, sip: t > 8 && t < 9.5 || t > 36 && t < 37.5, lookUp: t >= 43.5 && t < 52.5, lookDown: t >= 33 && t < 43.5 };
-  if (t < 55.0) { const u = smooth((t - 53.5) / 1.5); return { pos: new THREE.Vector3(BENCH.x - 0.3, -0.5, BENCH.z - 0.9 * u), ry: lerp(0, Math.PI / 2, u), mode: u < 0.5 ? 'sit' : 'idle' }; }
-  const u = clamp((t - 55.0) / 5.0, 0, 1); return { pos: new THREE.Vector3(BENCH.x - 0.3 + u * 9.5, -0.5, BENCH.z - 0.9 - u * 1.5), ry: Math.PI / 2 + 0.15, mode: 'walk', phase: t * 9 };
+  const OUT = new THREE.Vector3(DOOR_X + 1.5, -0.5, DOOR_Z), FRONT = new THREE.Vector3(BENCH.x - 0.3, -0.5, BENCH.z + 1.3), SEAT = new THREE.Vector3(BENCH.x - 0.3, -0.5, BENCH.z + 0.1);
+  if (t < 1.0) return { pos: new THREE.Vector3(DOOR_X - 0.7, -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'idle', cup: true, push: smooth((t - 0.4) / 0.6) };
+  if (t < 2.4) { const u = smooth((t - 1.0) / 1.4); return { pos: new THREE.Vector3(lerp(DOOR_X - 0.7, OUT.x, u), -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'walk', phase: t * 9, cup: true, push: 1 - smooth((t - 1.6) / 0.6) }; }
+  if (t < 5.2) { const u = smooth((t - 2.4) / 2.8); const ry = Math.atan2(FRONT.x - OUT.x, FRONT.z - OUT.z); return { pos: OUT.clone().lerp(FRONT, u), ry: lerp(Math.PI / 2, ry, smooth(u * 3)), mode: 'walk', phase: t * 9, cup: true }; }
+  if (t < 5.9) { const u = smooth((t - 5.2) / 0.7); return { pos: FRONT.clone(), ry: lerp(Math.atan2(FRONT.x - OUT.x, FRONT.z - OUT.z), 0, u), mode: 'idle', cup: true }; }
+  if (t < 6.7) { const u = smooth((t - 5.9) / 0.8); return { pos: FRONT.clone().lerp(SEAT, u), ry: 0, mode: 'walk', phase: -t * 7, amp: 0.4, cup: true }; }
+  if (t < 7.9) { const u = smooth((t - 6.7) / 1.2); return { pos: SEAT.clone(), ry: 0, mode: 'sitdown', sitU: u, cup: true }; }
+  if (t < 53.5) return { pos: SEAT.clone(), ry: 0, mode: 'sitdown', sitU: 1, cup: t < 39.8, placing: t >= 39.0 && t < 39.8 ? (t - 39.0) / 0.8 : 0, sip: (t > 9 && t < 10.5) || (t > 36 && t < 37.5), lookUp: t >= 43.5 && t < 52.5, lookDown: t >= 33 && t < 43.5 };
+  if (t < 54.9) { const u = smooth((t - 53.5) / 1.4); return { pos: SEAT.clone(), ry: 0, mode: 'sitdown', sitU: 1 - u }; }
+  if (t < 55.6) { const u = smooth((t - 54.9) / 0.7); return { pos: SEAT.clone().lerp(FRONT, u * 0.5), ry: lerp(0, Math.PI / 2 + 0.15, u), mode: 'walk', phase: t * 8, amp: 0.5 }; }
+  const u = clamp((t - 55.6) / 4.4, 0, 1); const from = SEAT.clone().lerp(FRONT, 0.5); return { pos: new THREE.Vector3(from.x + u * 9.0, -0.5, from.z - u * 1.2), ry: Math.PI / 2 + 0.15, mode: 'walk', phase: t * 9 };
 }
 const SEAT_Y = -0.78;   // hips on the bench seat (0.78 is hip height in the person model)
 function poseLimbs(g, p, t) {
   const Lb = g.userData.limbs; g.position.copy(p.pos); g.rotation.y = p.ry;
-  if (p.mode === 'walk') animateGait(g, p.phase, 'walk');
-  else if (p.mode === 'sit') { Lb.ll.rotation.x = -1.5; Lb.rl.rotation.x = -1.5; Lb.la.rotation.x = -0.6; Lb.ra.rotation.x = p.cup ? (p.sip ? -2.4 : -1.0) : -0.6; Lb.la.rotation.z = 0.05; Lb.ra.rotation.z = p.sip ? -0.5 : -0.05; g.userData.torso.rotation.x = 0.05; Lb.head.rotation.x = p.sip ? -0.2 : p.lookUp ? -0.45 : p.lookDown ? 0.4 : 0; Lb.head.rotation.y = Math.sin(t * 0.5) * 0.25; g.position.y = SEAT_Y; }
-  else if (p.mode === 'turn') { animateGait(g, t * 1.4, 'idle'); Lb.ra.rotation.x = -1.0; }
+  if (p.mode === 'walk') animateGait(g, p.phase, 'walk', p.amp ?? 1);
+  else if (p.mode === 'sitdown') {
+    const u = p.sitU; g.position.y = lerp(-0.5, SEAT_Y, u);
+    Lb.ll.rotation.x = -1.5 * u; Lb.rl.rotation.x = -1.5 * u; g.userData.torso.rotation.x = 0.4 * Math.sin(u * Math.PI) + 0.05 * u;
+    Lb.la.rotation.x = -0.6 * u; Lb.ra.rotation.x = p.cup ? (p.sip ? -2.4 : -1.0) : -0.6 * u; Lb.la.rotation.z = 0.05; Lb.ra.rotation.z = p.sip ? -0.5 : -0.05;
+    if (p.placing) { Lb.ra.rotation.x = lerp(-1.0, -0.4, Math.sin(p.placing * Math.PI)); Lb.ra.rotation.z = -0.9 * Math.sin(p.placing * Math.PI); }
+    Lb.head.rotation.x = p.sip ? -0.2 : p.lookUp ? -0.45 : p.lookDown ? 0.4 : 0.15 * Math.sin(u * Math.PI); Lb.head.rotation.y = u >= 1 ? Math.sin(t * 0.5) * 0.25 : 0;
+  }
   else { animateGait(g, t * 1.4, 'idle'); if (p.cup) { Lb.ra.rotation.x = p.sip ? -2.4 : -1.1; Lb.ra.rotation.z = p.sip ? -0.5 : -0.04; } }
   if (p.mode === 'walk' && p.cup) { Lb.ra.rotation.x = -1.1; Lb.ra.rotation.z = -0.04; }
+  if (p.push) { Lb.la.rotation.x = -1.3 * p.push; Lb.la.rotation.z = -0.1 * p.push; }       // left hand pushes the door open
   cup.visible = !!p.cup;
 }
-
-
 // ---------------------------------------------------------------------------
 // Per-frame update
 // ---------------------------------------------------------------------------
@@ -190,7 +200,8 @@ window.renderAt = function (t) {
 
   // --- city ---
   for (const b of buildings) { b.mat.emissiveIntensity = clamp(nt * 1.1, 0, 1) * 0.95 * (1 - dk * 0.5 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.2))); if (b.store) b.store.material.emissiveIntensity = 0.25 + 0.75 * nt; }
-  cafeB.signMat.emissiveIntensity = 0.2 + 0.8 * nt;
+  cafeB.signMat.emissiveIntensity = 0.2 + 0.8 * Math.max(nt, 1 - smooth((t - 5) / 4));
+  cafeB.mat.emissiveIntensity = Math.max(cafeB.mat.emissiveIntensity, 0.8 * (1 - smooth((t - 5) / 4)));
   for (const h of lampHeads) h.material.color.set(nt > 0.2 ? 0xfff0c8 : 0x6a6f78).multiplyScalar(1 - dk * 0.35 * (0.5 + 0.5 * Math.sin(t * 2 * Math.PI * 1.2)));
   updateTrafficLights(trafficLights, t, 1 - st);
   for (const c of cars) { const d = c.userData; const x = ((d.x0 + d.dir * d.speed * t + 50) % 100 + 100) % 100 - 50; c.position.set(x, -0.5, d.laneZ); c.rotation.y = d.dir > 0 ? 0 : Math.PI; for (const w of d.wheels) w.rotation.y = -t * d.speed * 3; d.tail.material.color.set(0xff3b2f).multiplyScalar(0.6 + 0.4 * nt); d.lights.material.color.set(0xfff2c0).multiplyScalar(0.4 + 0.6 * nt); }
@@ -218,7 +229,8 @@ window.renderAt = function (t) {
 
   // --- hero ---
   const hp = heroPose(t); poseLimbs(hero, hp, t);
-  frontDoor.rotation.y = -smooth((t - 0.4) / 0.9) * 1.6 * (1 - smooth((t - 3.2) / 1.2));
+  frontDoor.rotation.y = smooth((t - 0.45) / 0.9) * 1.55 * (1 - smooth((t - 2.6) / 1.3));
+  benchCup.visible = t >= 39.8;
   heroB.syncAt = SYNC; setBubble(heroB, t, hero.position, t >= 54.2 ? 'starGold' : null);
   if (t >= 54.2) heroB.offsetY = 2.75;
 

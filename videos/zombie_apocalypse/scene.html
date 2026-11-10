@@ -142,8 +142,9 @@ function updateHud(t) {
 // Hero blocking
 // ---------------------------------------------------------------------------
 function heroPose(t) {
-  if (t < 1.2) return { pos: new THREE.Vector3(DOOR_X - 0.6, -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'idle', cup: true };
-  if (t < 4.6) { const u = smooth((t - 1.2) / 3.4); return { pos: new THREE.Vector3(lerp(DOOR_X - 0.6, STAND.x, u), -0.5, lerp(DOOR_Z, STAND.z, u)), ry: Math.PI / 2 + u * 0.1, mode: 'walk', phase: t * 9, cup: true }; }
+  if (t < 1.2) return { pos: new THREE.Vector3(DOOR_X - 0.7, -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'idle', cup: true, push: smooth((t - 0.55) / 0.6) };
+  if (t < 2.5) { const u = smooth((t - 1.2) / 1.3); return { pos: new THREE.Vector3(lerp(DOOR_X - 0.7, DOOR_X + 1.5, u), -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'walk', phase: t * 9, cup: true, push: 1 - smooth((t - 1.8) / 0.6) }; }
+  if (t < 4.6) { const u = smooth((t - 2.5) / 2.1); return { pos: new THREE.Vector3(lerp(DOOR_X + 1.5, STAND.x, u), -0.5, lerp(DOOR_Z, STAND.z, u)), ry: Math.PI / 2 - 0.3 * smooth(u * 2), mode: 'walk', phase: t * 9, cup: true }; }
   if (t < 9.2) return { pos: STAND.clone(), ry: Math.PI * 0.62, mode: 'idle', cup: true, sip: Math.sin(t * 1.1) > 0.6 };
   if (t < 13) { const s = smooth((t - 9.2) / 1.4); return { pos: new THREE.Vector3(STAND.x - s * 1.4, -0.5, STAND.z + s * 0.6), ry: lerp(Math.PI * 0.62, Math.PI * 0.5, s), mode: 'idle', cup: s < 0.5, dropCup: s >= 0.5 }; }
   if (t < 15.2) { const u = smooth((t - 13) / 2.2); return { pos: new THREE.Vector3(lerp(STAND.x - 1.4, LADDER_X + 0.5, u), -0.5, lerp(STAND.z + 0.6, RZ, u)), ry: -Math.PI / 2 + 0.3 * (1 - u), mode: 'run', phase: t * 14 }; }
@@ -171,6 +172,7 @@ function poseLimbs(g, p, t) {
   else { animateGait(g, t * 1.4, 'idle'); if (p.cup) { Lb.ra.rotation.x = p.sip ? -2.4 : -1.1; Lb.ra.rotation.z = p.sip ? -0.5 : -0.04; } Lb.head.rotation.x = p.sip ? -0.2 : p.lookDown ? 0.45 : 0; }
   if (p.mode === 'walk' && p.cup) { Lb.ra.rotation.x = -1.1; Lb.ra.rotation.z = -0.04; }
   if (p.pushing) { Lb.la.rotation.x = -1.4; Lb.ra.rotation.x = -1.4; g.userData.torso.rotation.x = 0.3; }
+  if (p.push) { Lb.la.rotation.x = -1.3 * p.push; Lb.la.rotation.z = -0.1 * p.push; }
   cup.visible = !!p.cup;
 }
 function tintZombie(g, base0, turn) { const m = g.userData.mats; m.skin.color.copy(base0.skin).lerp(ZSKIN, turn); m.shirt.color.copy(base0.shirt).lerp(ZSHIRT, turn * 0.8); m.pants.color.copy(base0.pants).lerp(ZPANTS, turn * 0.6); if (g.userData.jacket) g.userData.jacket.color.lerp(ZSHIRT, turn * 0.5); }
@@ -237,7 +239,7 @@ window.renderAt = function (t) {
 
   // --- hero, door, crates, neighbours ---
   const hp = heroPose(t); poseLimbs(hero, hp, t);
-  frontDoor.rotation.y = -smooth((t - 0.6) / 0.9) * 1.6 * (1 - smooth((t - 3.6) / 1.2));
+  frontDoor.rotation.y = smooth((t - 0.6) / 0.9) * 1.55 * (1 - smooth((t - 3.2) / 1.3));
   droppedCup.visible = !!hp.dropCup || t >= 13;
   for (const c of crates) { const k = smooth(clamp((t - c.t0) / 1.6, 0, 1)); c.m.position.lerpVectors(c.from, c.to, k); }
   for (const sv of survivors) {
