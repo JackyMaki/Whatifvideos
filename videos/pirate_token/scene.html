@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What if you got the Pirate Shop Token — low poly scene</title>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="ui">
+  <div id="title" class="abs">What if you got the <em>Pirate Shop Token</em>?</div>
+  <div id="hud" class="abs"><div id="hudLabel" class="label">Odds, per match</div><div id="hudValue">1 in 137,500</div><div id="hudSub" class="label">06:00 · Sunrise</div></div>
+  <div id="cap" class="abs"><div id="capInner"></div></div>
+  <div id="footer" class="abs">A what‑if, every day</div>
+</div>
+
+<script type="module">
+import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+import { lam, glowMat, solid, roundedBox, person, animateGait } from '../../render/city.js';
+injectBaseCss();
+
+const world = createWorld({ seed: 1375, canvas: document.getElementById('c'), ground: 'valley', flatRadius: 9, trees: 90, clouds: 8, shadows: true, shadowExtent: 34, fog: 0.011,
+  treeKeepOut: (x, z) => Math.hypot(x, z) < 14 || (Math.abs(x) < 6 && z > -24) || (x > 26 && x < 56 && z > -22 && z < 10) });
+const { rng, R, renderer, scene, camera, hemi, sunLight } = world;
+const SKY = { ...DAY,
+  SKY: {
+    top: [[0, '#3a4f7e'], [7, '#5f9be0'], [24, '#4f8fdc'], [34, '#5a5f9e'], [39, '#4a3a7a'], [44, '#1b1f4a'], [49, '#0a0820'], [60, '#08061c']],
+    mid: [[0, '#9a7aa6'], [7, '#a9cdf0'], [24, '#a6cdf2'], [34, '#c89ab0'], [39, '#ff8a5a'], [44, '#5a3d6e'], [49, '#2a1a3c'], [60, '#2a1a3c']],
+    bot: [[0, '#f0a878'], [7, '#dde9f3'], [24, '#e2eef6'], [34, '#ffc89a'], [39, '#ff6a3d'], [44, '#6a3d6e'], [49, '#3a2446'], [60, '#3a2446']],
+  },
+  hemiSky: [[0, '#8a7ab8'], [7, '#bfd8ff'], [34, '#e0b0b0'], [44, '#4a4070'], [60, '#443a66']],
+  hemiGround: [[0, '#4a3a3a'], [7, '#3a5a2a'], [44, '#1a2030'], [60, '#182028']] };
+const FLOOR = -0.6;
+
+// ---------------------------------------------------------------------------
+// Island camp: loot chest, the token
+// ---------------------------------------------------------------------------
+const wood = lam(0xb98a4e), woodDark = lam(0x8a6236), metal = lam(0x3a3f48), goldMat = new THREE.MeshLambertMaterial({ color: 0xffd04a, emissive: 0x9a6a10, emissiveIntensity: 0.8 });
+const CHEST = new THREE.Vector3(3.2, FLOOR, -2.4);
+const chest = new THREE.Group(); chest.position.copy(CHEST); chest.rotation.y = -0.6; scene.add(chest);
+{ const body = solid(roundedBox(1.3, 0.7, 0.8, 0.15), woodDark); body.position.y = 0.35; chest.add(body); const lidPiv = new THREE.Group(); lidPiv.position.set(0, 0.7, -0.4); chest.add(lidPiv); const lid = solid(roundedBox(1.3, 0.3, 0.8, 0.3), wood); lid.position.set(0, 0.15, 0.4); lidPiv.add(lid); const clasp = solid(new THREE.BoxGeometry(0.2, 0.2, 0.06), goldMat); clasp.position.set(0, 0.55, 0.42); chest.add(clasp); chest.userData.lid = lidPiv;
+  const glow = new THREE.PointLight(0xffd27a, 0, 7, 1.6); glow.position.set(0, 0.9, 0); chest.add(glow); chest.userData.glow = glow; }
+function makeToken() { const g = new THREE.Group(); const coin = solid(new THREE.CylinderGeometry(0.26, 0.26, 0.05, 20), goldMat); coin.rotation.x = Math.PI / 2; g.add(coin); const star = solid(new THREE.CylinderGeometry(0.12, 0.12, 0.07, 5), new THREE.MeshLambertMaterial({ color: 0x6a4a10 })); star.rotation.x = Math.PI / 2; g.add(star); const rim = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.025, 6, 24), goldMat); g.add(rim); return g; }
+const token = makeToken(); token.visible = false; scene.add(token);
+const tokenGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(), color: 0xffd27a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); tokenGlow.scale.setScalar(1.6); scene.add(tokenGlow);
+const tokenLight = new THREE.PointLight(0xffd27a, 0, 8, 1.6); scene.add(tokenLight);
+const sparkN = 60, sparkPos = new Float32Array(sparkN * 3), sparkSeeds = []; for (let i = 0; i < sparkN; i++) sparkSeeds.push({ az: R(0, 6.28), rad: R(0.2, 0.9), phase: rng(), speed: R(0.4, 0.8) });
+const sparkGeo = new THREE.BufferGeometry(); sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+const sparks = new THREE.Points(sparkGeo, new THREE.PointsMaterial({ color: 0xffe9a0, size: 0.16, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, map: radialTexture(), alphaTest: 0.01 })); scene.add(sparks);
+const moonLamp = new THREE.PointLight(0x9fb4ff, 0, 30, 1.4); moonLamp.position.set(2, 6, 4); scene.add(moonLamp);
+
+// ---------------------------------------------------------------------------
+// The shop: a floating holo arena to the east with mannequins on pedestals
+// ---------------------------------------------------------------------------
+const SHOP = new THREE.Vector3(42, 3.9, -6);                  // platform top height is SHOP.y; stand height = SHOP.y
+const shop = new THREE.Group(); shop.position.set(SHOP.x, 0, SHOP.z); scene.add(shop);
+const PED_R = 6.4, PED_N = 8;
+{
+  const plat = solid(new THREE.CylinderGeometry(10.5, 9.5, 0.6, 36), lam(0x1f2436), false, true); plat.position.y = SHOP.y - 0.3; shop.add(plat);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(10.5, 0.14, 8, 72), glowMat(0x7cf5ff, 0.8)); rim.rotation.x = Math.PI / 2; rim.position.y = SHOP.y + 0.02; shop.add(rim);
+  const grid = new THREE.Mesh(new THREE.CylinderGeometry(10.4, 10.4, 0.02, 36), new THREE.MeshBasicMaterial({ color: 0x24304a, toneMapped: false })); grid.position.y = SHOP.y - 0.02; shop.add(grid);
+}
+const pedestals = [], mannequinOpts = [
+  { skin: 0xf1c27d, shirt: 0xff3b2f, pants: 0x1f1f24, hair: 0x111111, hairStyle: 'cap', jacket: 0x2b2f3a }, { skin: 0xc68642, shirt: 0x7cf5ff, pants: 0x2b3a55, hair: 0x2a1a0e, hairStyle: 'long', jacket: false },
+  { skin: 0xffdbac, shirt: 0xffd04a, pants: 0x3a3a3a, hair: 0xc9a26a, hairStyle: 'short', jacket: 0x7a3a2e }, { skin: 0x8d5524, shirt: 0xb8ff7a, pants: 0x4a5a7a, hair: 0x111111, hairStyle: 'short', jacket: false },
+  { skin: 0xe0ac69, shirt: 0xd84f8e, pants: 0x1f1f24, hair: 0x6a3a2a, hairStyle: 'long', jacket: 0x3a4a6a }, { skin: 0xf1c27d, shirt: 0x8e5ad8, pants: 0x2b3a55, hair: 0x4a3020, hairStyle: 'cap', jacket: false },
+  { skin: 0xa5673f, shirt: 0xf4f1ea, pants: 0x6b4a2e, hair: 0x2a1a0e, hairStyle: 'short', jacket: 0x5d6b4a }, { skin: 0xffdbac, shirt: 0x2fb5a3, pants: 0x8a8f99, hair: 0x8a6a3a, hairStyle: 'long', jacket: false },
+];
+function panelSprite(w, h, scale) { const c = document.createElement('canvas'); c.width = w; c.height = h; const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 })); s.scale.set(scale, scale * h / w, 1); scene.add(s); return { c, g: c.getContext('2d'), tex, s }; }
+function drawTag(p, text, color = '#7cf5ff', bg = 'rgba(10,20,36,0.85)') { const g = p.g; g.clearRect(0, 0, p.c.width, p.c.height); g.fillStyle = bg; g.beginPath(); g.roundRect(8, 8, p.c.width - 16, p.c.height - 16, 26); g.fill(); g.strokeStyle = color; g.lineWidth = 8; g.stroke(); g.fillStyle = color; g.font = `700 ${Math.round(p.c.height * 0.42)}px Inter, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, p.c.width / 2, p.c.height / 2 + 4); p.tex.needsUpdate = true; }
+for (let i = 0; i < PED_N; i++) {
+  const a = lerp(-1.25, 1.25, i / (PED_N - 1)); const x = Math.sin(a) * PED_R, z = -Math.cos(a) * PED_R;
+  const ped = solid(new THREE.CylinderGeometry(0.9, 1.0, 0.4, 12), lam(0x2d3650)); ped.position.set(x, SHOP.y + 0.2, z); shop.add(ped);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.06, 6, 28), glowMat(0x7cf5ff, 0.9)); ring.rotation.x = Math.PI / 2; ring.position.set(x, SHOP.y + 0.42, z); shop.add(ring);
+  const man = person(world, { ...mannequinOpts[i], bag: false }); man.position.set(SHOP.x + x, SHOP.y + 0.4, SHOP.z + z); man.rotation.y = Math.atan2(-x, -z) + Math.PI; scene.add(man);
+  const Lb = man.userData.limbs; Lb.la.rotation.z = 0.25; Lb.ra.rotation.z = -0.25; Lb.ra.rotation.x = -0.35;
+  const tag = panelSprite(420, 150, 1.5); drawTag(tag, 'FREE'); tag.s.position.set(SHOP.x + x, SHOP.y + 3.1, SHOP.z + z);
+  const lock = panelSprite(240, 240, 0.8); { const g = lock.g; g.clearRect(0, 0, 240, 240); g.fillStyle = 'rgba(20,10,20,0.85)'; g.beginPath(); g.roundRect(8, 8, 224, 224, 40); g.fill(); g.strokeStyle = '#ff6a5a'; g.lineWidth = 10; g.beginPath(); g.arc(120, 100, 44, Math.PI, 0); g.stroke(); g.fillStyle = '#ff6a5a'; g.beginPath(); g.roundRect(56, 100, 128, 96, 18); g.fill(); lock.tex.needsUpdate = true; } lock.s.position.set(SHOP.x + x, SHOP.y + 3.1, SHOP.z + z);
+  pedestals.push({ x: SHOP.x + x, z: SHOP.z + z, ring, man, tag, lock, bought: 15.6 + i * 0.95, a });
+}
+// pickaxe rack and emote spots for the noon act
+const rack = new THREE.Group(); rack.position.set(SHOP.x - 3.0, SHOP.y, SHOP.z + 3.6); shop.parent.add(rack);
+const rackPicks = [];
+{ const bar = solid(new THREE.BoxGeometry(3.2, 0.1, 0.1), metal); bar.position.y = 1.5; rack.add(bar); for (const sx of [-1.5, 1.5]) { const leg = solid(new THREE.BoxGeometry(0.1, 1.5, 0.1), metal); leg.position.set(sx, 0.75, 0); rack.add(leg); }
+  const cols = [0xff3b2f, 0x7cf5ff, 0xffd04a, 0xb8ff7a, 0xd84f8e]; for (let i = 0; i < 5; i++) { const g = new THREE.Group(); const handle = solid(new THREE.BoxGeometry(0.08, 1.2, 0.08), woodDark); g.add(handle); const head = solid(roundedBox(0.55, 0.14, 0.14, 0.3), lam(cols[i])); head.position.y = 0.55; g.add(head); g.position.set(-1.2 + i * 0.6, 0.85, 0); g.visible = false; rack.add(g); rackPicks.push(g); } }
+const locker = panelSprite(900, 1100, 2.1);
+{ const g = locker.g; g.clearRect(0, 0, 900, 1100); g.fillStyle = 'rgba(10,16,30,0.9)'; g.beginPath(); g.roundRect(10, 10, 880, 1080, 40); g.fill(); g.strokeStyle = '#7cf5ff'; g.lineWidth = 8; g.stroke(); g.fillStyle = '#e6fbff'; g.font = '700 70px Inter, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText('LOCKER · 400 ITEMS', 50, 80); const cols = ['#ff3b2f', '#7cf5ff', '#ffd04a', '#b8ff7a', '#d84f8e', '#8e5ad8', '#2fb5a3', '#ff8a3d']; let k = 0; for (let r = 0; r < 7; r++) for (let c = 0; c < 6; c++) { g.fillStyle = cols[(k++) % cols.length]; g.globalAlpha = 0.85; g.beginPath(); g.roundRect(50 + c * 135, 150 + r * 130, 115, 110, 18); g.fill(); } g.globalAlpha = 1; locker.tex.needsUpdate = true; }
+locker.s.position.set(SHOP.x, SHOP.y + 2.4, SHOP.z - 1.6);
+const shopLight = new THREE.PointLight(0x7cf5ff, 0, 30, 1.2); shopLight.position.set(SHOP.x, SHOP.y + 5, SHOP.z + 1); scene.add(shopLight);
+const buyFlash = new THREE.PointLight(0xffd27a, 0, 10, 1.6); scene.add(buyFlash);
+
+// ---------------------------------------------------------------------------
+// People: you, two squadmates, a crowd of fans at sunset
+// ---------------------------------------------------------------------------
+const YOU_OPTS = { skin: 0xf1c27d, shirt: 0x3b7dd8, pants: 0x2b3a55, hair: 0x4a3020, hairStyle: 'short', jacket: false, bag: true };
+const you = person(world, YOU_OPTS); scene.add(you);
+const dex = person(world, { skin: 0xc68642, shirt: 0xff8a3d, pants: 0x1f1f24, hair: 0x111111, hairStyle: 'cap', jacket: false, bag: true }); scene.add(dex);
+const mo = person(world, { skin: 0xffdbac, shirt: 0x8e5ad8, pants: 0x3a3a3a, hair: 0x6a3a2a, hairStyle: 'long', jacket: false, bag: true }); scene.add(mo);
+const handToken = makeToken(); handToken.scale.setScalar(0.8); handToken.position.set(0, -0.76, 0.14); you.userData.limbs.ra.add(handToken); handToken.visible = false;
+const fans = [];
+for (let i = 0; i < 10; i++) { const g = person(world, { bag: true }); g.visible = false; scene.add(g); const a = -2.4 + i * (4.8 / 9); fans.push({ g, a, start: new THREE.Vector3(Math.sin(a) * 14, FLOOR, Math.cos(a) * 14 - 1), end: new THREE.Vector3(Math.sin(a) * 3.8, FLOOR, Math.cos(a) * 3.8 - 1), t0: 33.6 + i * 0.5, ph: R(0, 6.28), msg: panelSprite(520, 150, 1.6) }); drawTag(fans[i].msg, 'can you gift me?', '#ffd27a'); }
+const youBase = { shirt: new THREE.Color(0x3b7dd8), pants: new THREE.Color(0x2b3a55) };
+function setOutfit(g, shirt, pants, jacketCol) { const m = g.userData.mats; m.shirt.color.set(shirt); m.pants.color.set(pants); if (g.userData.jacket) g.userData.jacket.color.set(jacketCol || shirt); }
+
+// camps / positions
+const CAMP = { you: new THREE.Vector3(1.6, FLOOR, -1.3), dex: new THREE.Vector3(-0.7, FLOOR, 1.5), mo: new THREE.Vector3(2.9, FLOOR, 1.7), youStart: new THREE.Vector3(-9, FLOOR, 5), dexStart: new THREE.Vector3(-12, FLOOR, -2), moStart: new THREE.Vector3(8, FLOOR, 7) };
+const SHOP_PATH = i => { const a = pedestals[i].a; return new THREE.Vector3(SHOP.x + Math.sin(a) * (PED_R - 1.7), SHOP.y, SHOP.z - Math.cos(a) * (PED_R - 1.7)); };
+const CENTER = new THREE.Vector3(SHOP.x, SHOP.y, SHOP.z + 0.5);
+
+// ---------------------------------------------------------------------------
+// Camera (cuts between the island camp and the shop)
+// ---------------------------------------------------------------------------
+const CAM = {
+  x: [[0, -2.5], [6, 0.5], [8.2, 2.2], [11, 1.2], [14.9, 0.8], [15, SHOP.x - 4.5], [23.9, SHOP.x + 3.6], [24, SHOP.x + 1.0], [32.9, SHOP.x - 1.2], [33, 3.5], [43.4, 3.2], [43.5, SHOP.x + 2.8], [52.4, SHOP.x + 2.4], [52.5, 2.8], [60, 4.5]],
+  y: [[0, 2.3], [6, 2.1], [8.2, 1.9], [11, 2.3], [14.9, 2.3], [15, SHOP.y + 2.4], [23.9, SHOP.y + 2.6], [24, SHOP.y + 2.8], [32.9, SHOP.y + 2.6], [33, 2.6], [43.4, 2.8], [43.5, SHOP.y + 2.3], [52.4, SHOP.y + 2.2], [52.5, 2.0], [60, 2.6]],
+  z: [[0, 8.5], [6, 6.5], [8.2, 3.0], [11, 8.6], [14.9, 8.2], [15, SHOP.z + 6.0], [23.9, SHOP.z + 7.6], [24, SHOP.z + 7.5], [32.9, SHOP.z + 7.0], [33, 7.5], [43.4, 7.0], [43.5, SHOP.z + 5.6], [52.4, SHOP.z + 5.4], [52.5, 6.5], [60, 9.5]],
+  tx: [[0, 1.5], [6, 2.5], [8.2, 3.0], [11, 1.2], [14.9, 1.0], [15, SHOP.x - 3.0], [23.9, SHOP.x + 2.0], [24, SHOP.x - 0.5], [32.9, SHOP.x + 0.5], [33, 0.5], [43.4, 0.5], [43.5, SHOP.x], [52.4, SHOP.x], [52.5, 1.2], [60, 0.8]],
+  ty: [[0, 0.5], [6, 0.6], [8.2, 0.5], [11, 1.0], [14.9, 1.0], [15, SHOP.y + 1.2], [23.9, SHOP.y + 1.2], [24, SHOP.y + 1.0], [32.9, SHOP.y + 1.1], [33, 1.0], [43.4, 1.2], [43.5, SHOP.y + 1.6], [52.4, SHOP.y + 1.4], [52.5, 0.8], [60, 0.9]],
+  tz: [[0, -2.0], [6, -2.4], [8.2, -2.4], [11, -0.8], [14.9, -0.6], [15, SHOP.z - 3.5], [23.9, SHOP.z - 3.0], [24, SHOP.z - 1.5], [32.9, SHOP.z - 2.0], [33, -1.0], [43.4, -1.0], [43.5, SHOP.z - 1.6], [52.4, SHOP.z - 1.6], [52.5, -0.5], [60, -1.0]],
+};
+const overlay = createOverlay({ highlight: /(something gold spins out|a hundred and thirty-seven thousand|the pirate token|doesn't believe you|fourteen free days|no junk|every skin you've wanted|thirty-one before lunch|every emote|every pickaxe|every bundle you skipped|four hundred|everyone wants to be your duo|two hundred messages|can't gift|two hundred times|the shop locks|can't decide|wear the default|the first skin you'd buy|tell your squad)/gi });
+const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
+function updateHud(t) {
+  let label = 'Odds, per match', value = '1 in 137,500', color = '#fff';
+  if (t >= 9.6 && t < 15) { label = 'Pirate shop token'; value = 'Found'; color = '#ffd27a'; }
+  else if (t >= 15 && t < 24) { label = 'Skins bought'; value = String(Math.round(kf(t, [[15.4, 0], [23.0, 31]], x => x))); color = '#7cf5ff'; }
+  else if (t >= 24 && t < 33) { label = 'Locker items'; value = String(Math.round(kf(t, [[24.4, 12], [32.0, 400]], x => x))); color = '#7cf5ff'; }
+  else if (t >= 33 && t < 43.5) { label = 'Gift requests'; value = String(Math.round(kf(t, [[34.0, 0], [42.0, 200]], x => x))); color = '#ffd27a'; }
+  else if (t >= 43.5 && t < 52.5) { label = 'Free days left'; value = String(Math.round(kf(t, [[43.8, 14], [47.5, 0]], x => x))); color = '#ff6a5a'; }
+  else if (t >= 52.5) { label = 'Tokens left'; value = '1 · for 2027'; color = '#ffd27a'; }
+  hud.label.textContent = label; hud.value.textContent = value; hud.value.style.color = color; hud.value.style.fontSize = value.length > 9 ? '84px' : '';
+}
+
+// ---------------------------------------------------------------------------
+// Blocking helpers
+// ---------------------------------------------------------------------------
+function run(g, from, to, u, t, speed = 13, gait = 'run') { g.position.lerpVectors(from, to, u); g.rotation.y = Math.atan2(to.x - from.x, to.z - from.z); animateGait(g, t * speed, gait); }
+function idle(g, pos, ry, t, ph = 0) { g.position.copy(pos); g.rotation.y = ry; animateGait(g, t * 1.4 + ph, 'idle'); }
+function faceTo(g, target) { g.rotation.y = Math.atan2(target.x - g.position.x, target.z - g.position.z); }
+function crouchOpen(g, u, t) { const Lb = g.userData.limbs; g.position.y += -0.3 * u; Lb.ll.rotation.x = -1.3 * u; Lb.rl.rotation.x = -0.6 * u; g.userData.torso.rotation.x = 0.35 * u; Lb.ra.rotation.x = -1.2 * u; Lb.la.rotation.x = -0.4 * u; Lb.head.rotation.x = 0.35 * u; }
+function cheer(g, t, ph = 0) { const Lb = g.userData.limbs; Lb.la.rotation.x = -2.7; Lb.ra.rotation.x = -2.7; Lb.la.rotation.z = 0.5; Lb.ra.rotation.z = -0.5; Lb.head.rotation.x = -0.35; g.position.y += Math.max(0, Math.sin(t * 7 + ph)) * 0.25; }
+function shrug(g, u) { const Lb = g.userData.limbs; Lb.la.rotation.x = -0.6 * u; Lb.ra.rotation.x = -0.6 * u; Lb.la.rotation.z = 0.9 * u; Lb.ra.rotation.z = -0.9 * u; Lb.head.rotation.z = 0.2 * u; }
+function dance(g, t, ph) { const Lb = g.userData.limbs; const s = Math.sin(t * 6 + ph); Lb.la.rotation.x = -1.2 + s * 1.0; Lb.ra.rotation.x = -1.2 - s * 1.0; Lb.la.rotation.z = 0.4; Lb.ra.rotation.z = -0.4; Lb.ll.rotation.x = s * 0.35; Lb.rl.rotation.x = -s * 0.35; g.userData.torso.rotation.x = 0; Lb.head.rotation.z = s * 0.15; g.position.y += Math.abs(s) * 0.12; g.rotation.y += Math.sin(t * 3 + ph) * 0.25; }
+function headShake(g, u, t) { g.userData.limbs.head.rotation.y = Math.sin(t * 9) * 0.45 * u; }
+
+// ---------------------------------------------------------------------------
+// Per-frame update
+// ---------------------------------------------------------------------------
+const tmpV = new THREE.Vector3();
+window.renderAt = function (t) {
+  const { nt } = world.updateEnvironment(t, SKY);
+  const inShop = (t >= 15 && t < 33) || (t >= 43.5 && t < 52.5);
+  sunLight.position.set((inShop ? SHOP.x : 0) + lerp(-34, 30, clamp(t / 40, 0, 1)), lerp(20, 34, Math.sin(clamp(t / 40, 0, 1) * Math.PI)), (inShop ? SHOP.z : 0) + 18);
+  sunLight.target.position.set(inShop ? SHOP.x : 0, 0, inShop ? SHOP.z : 0); sunLight.target.updateMatrixWorld();
+  moonLamp.position.set(inShop ? SHOP.x + 2 : 2, inShop ? SHOP.y + 6 : 6, inShop ? SHOP.z + 4 : 4); moonLamp.intensity = nt * 55;
+  shopLight.intensity = inShop ? (t < 43.5 ? 18 : 10) : 0;
+
+  // ---------------- island: find the token (0-15) ----------------
+  const chestSpot = new THREE.Vector3(CHEST.x - 1.3, FLOOR, CHEST.z + 0.9);
+  if (t < 7.6) { const u = clamp((t - 1.6) / 6.0, 0, 1); run(you, CAMP.youStart, chestSpot, smooth(u), t, 12, u < 1 ? 'run' : 'idle'); if (u >= 1) idle(you, chestSpot, Math.atan2(CHEST.x - chestSpot.x, CHEST.z - chestSpot.z), t); }
+  else if (t < 10.6) { idle(you, chestSpot, Math.atan2(CHEST.x - chestSpot.x, CHEST.z - chestSpot.z), t); const u = smooth((t - 7.6) / 0.7) * (1 - smooth((t - 9.4) / 0.6)); crouchOpen(you, u, t); if (t >= 9.6) { you.userData.limbs.ra.rotation.x = -1.6; you.userData.limbs.head.rotation.x = -0.3; } }
+  else if (t < 15) { idle(you, chestSpot, Math.PI * 0.9, t); const c = win(t, 10.6, 13.0, 0.4, 0.5); if (c > 0.05) cheer(you, t); else { you.userData.limbs.ra.rotation.x = -1.6; faceTo(you, dex.position); } }
+  // squadmates come running at the scream, then one shrugs
+  if (t < 10.2) { dex.position.copy(CAMP.dexStart); dex.visible = false; mo.position.copy(CAMP.moStart); mo.visible = false; }
+  else if (t < 13.0) { dex.visible = mo.visible = true; const u = smooth((t - 10.2) / 2.6); run(dex, CAMP.dexStart, CAMP.dex, u, t, 13, u < 1 ? 'run' : 'idle'); run(mo, CAMP.moStart, CAMP.mo, u, t, 13, u < 1 ? 'run' : 'idle'); if (u >= 1) { faceTo(dex, you.position); faceTo(mo, you.position); } }
+  else if (t < 15) { idle(dex, CAMP.dex, 0, t, 1); faceTo(dex, you.position); shrug(dex, win(t, 13.2, 14.9, 0.4, 0.3)); idle(mo, CAMP.mo, 0, t, 2); faceTo(mo, you.position); mo.userData.limbs.ra.rotation.x = -1.3; mo.userData.limbs.head.rotation.x = 0.3; }
+  // token flight: out of the chest in an arc, into the hand
+  chest.userData.lid.rotation.x = -smooth((t - 8.2) / 0.7) * 1.7 * (t < 15 ? 1 : 0); chest.userData.glow.intensity = t > 8.4 && t < 15 ? 5 : 0;
+  { const u = (t - 8.9) / 0.9; const flying = u > 0 && u < 1; token.visible = flying; if (flying) { const from = CHEST.clone().add(new THREE.Vector3(0, 1.0, 0)), to = new THREE.Vector3(chestSpot.x + 0.45, 1.25, chestSpot.z + 0.35); token.position.lerpVectors(from, to, u); token.position.y += Math.sin(u * Math.PI) * 1.3; token.rotation.y = t * 9; token.rotation.x = 0.3; } }
+  handToken.visible = (t >= 9.8 && t < 15) || t >= 53.2;
+  const tokenAt = token.visible ? token.position : handToken.visible ? handToken.getWorldPosition(tmpV) : null;
+  if (tokenAt) { tokenGlow.position.copy(tokenAt); tokenGlow.material.opacity = 0.75 + 0.2 * Math.sin(t * 8); tokenLight.position.copy(tokenAt); tokenLight.intensity = 6; sparks.material.opacity = 0.9; for (let i = 0; i < sparkN; i++) { const s = sparkSeeds[i]; const life = frac(t * s.speed + s.phase); const r = s.rad * (0.3 + life); sparkPos[i * 3] = tokenAt.x + Math.sin(s.az + life * 3) * r; sparkPos[i * 3 + 1] = tokenAt.y + life * 1.1 - 0.2; sparkPos[i * 3 + 2] = tokenAt.z + Math.cos(s.az + life * 3) * r; } sparkGeo.attributes.position.needsUpdate = true; } else { tokenGlow.material.opacity = 0; tokenLight.intensity = 0; sparks.material.opacity = 0; }
+
+  // ---------------- the shop: buying skins (15-24), emotes and pickaxes (24-33) ----------------
+  if (t >= 15 && t < 33) {
+    dex.visible = mo.visible = true;
+    if (t < 24) { // walk the arc, tap each pedestal
+      const u = clamp((t - 15.3) / 8.2, 0, 1); const fi = u * (PED_N - 1); const i0 = Math.floor(fi), i1 = Math.min(PED_N - 1, i0 + 1); const seg = fi - i0;
+      you.position.lerpVectors(SHOP_PATH(i0), SHOP_PATH(i1), seg); const next = SHOP_PATH(Math.min(PED_N - 1, i1));
+      const pedTarget = pedestals[Math.round(fi)]; const tap = Math.max(0, 1 - Math.abs(fi - Math.round(fi)) * 3);
+      if (u < 1) { you.rotation.y = Math.atan2(next.x - you.position.x, next.z - you.position.z) || you.rotation.y; animateGait(you, t * 7.5, 'walk', 0.8); } else animateGait(you, t * 1.4, 'idle');
+      if (tap > 0.3 || u >= 1) { faceTo(you, new THREE.Vector3(pedTarget.x, SHOP.y, pedTarget.z)); you.userData.limbs.ra.rotation.x = -1.35 * tap; }
+      idle(dex, new THREE.Vector3(SHOP.x - 6.6, SHOP.y, SHOP.z + 1.4), 0, t, 1); faceTo(dex, you.position); idle(mo, new THREE.Vector3(SHOP.x + 6.9, SHOP.y, SHOP.z + 1.1), 0, t, 2); faceTo(mo, you.position);
+      if (t > 21.4) setOutfit(you, 0xff3b2f, 0x1f1f24); // tried on the first skin
+    } else { // emotes with the squad, pickaxes appear on the rack
+      idle(you, new THREE.Vector3(SHOP.x + 0.3, SHOP.y, SHOP.z + 1.6), Math.PI, t); dance(you, t, 0);
+      idle(dex, new THREE.Vector3(SHOP.x - 2.0, SHOP.y, SHOP.z + 2.4), Math.PI * 0.8, t, 1); dance(dex, t, 2.1);
+      idle(mo, new THREE.Vector3(SHOP.x + 2.6, SHOP.y, SHOP.z + 2.6), Math.PI * 1.2, t, 2); dance(mo, t, 4.2);
+      setOutfit(you, t > 28 ? 0xffd04a : 0xff3b2f, t > 28 ? 0x3a3a3a : 0x1f1f24);
+    }
+  }
+  for (let i = 0; i < pedestals.length; i++) { const p = pedestals[i]; const b = t >= p.bought && t < 43.5; const pop = win(t, p.bought - 0.05, p.bought + 0.9, 0.15, 0.4);
+    p.ring.material.color.set(b ? 0xffd27a : 0x7cf5ff); p.ring.material.opacity = (t >= 43.5 ? 0.25 : 0.9) + (b ? 0.1 : 0); p.ring.scale.setScalar(1 + pop * 0.25);
+    p.tag.s.material.opacity = (t >= 15 && t < 43.5) ? (b ? 0.95 : 0.6) : 0; drawTag(p.tag, b ? 'BOUGHT' : 'FREE', b ? '#ffd27a' : '#7cf5ff'); p.tag.s.scale.set(1.5 * (1 + pop * 0.3), 1.5 * 150 / 420 * (1 + pop * 0.3), 1);
+    p.lock.s.material.opacity = win(t, 44.0 + i * 0.3, 52.5, 0.4, 0.3); p.man.userData.limbs.la.rotation.z = 0.25 + (b ? Math.sin(t * 2 + i) * 0.05 : 0); }
+  buyFlash.intensity = 0; for (const p of pedestals) { const f = win(t, p.bought - 0.05, p.bought + 0.6, 0.1, 0.5); if (f > 0) { buyFlash.position.set(p.x, SHOP.y + 1.6, p.z); buyFlash.intensity = 20 * f; } }
+  for (let i = 0; i < rackPicks.length; i++) { const show = t >= 25.5 + i * 0.9 && t < 52.5; rackPicks[i].visible = show; rackPicks[i].scale.setScalar(Math.max(0.001, win(t, 25.5 + i * 0.9, 61, 0.35, 0.1))); }
+
+  // ---------------- sunset: everyone wants a gift (33-43.5) ----------------
+  if (t >= 33 && t < 43.5) {
+    dex.visible = mo.visible = true;
+    idle(you, new THREE.Vector3(0.4, FLOOR, -1.0), 0, t); you.userData.limbs.ra.rotation.x = -1.3; you.userData.limbs.head.rotation.x = 0.3; headShake(you, win(t, 38.5, 42.5, 0.5, 0.5), t);
+    idle(dex, new THREE.Vector3(-1.6, FLOOR, -2.2), 0, t, 1); faceTo(dex, you.position); idle(mo, new THREE.Vector3(2.2, FLOOR, -2.4), 0, t, 2); faceTo(mo, you.position);
+    setOutfit(you, 0xffd04a, 0x3a3a3a);
+    for (const f of fans) { const u = clamp((t - f.t0) / 2.6, 0, 1); f.g.visible = t >= f.t0; if (!f.g.visible) continue; run(f.g, f.start, f.end, smooth(u), t, 13, u < 1 ? 'run' : 'idle'); if (u >= 1) { faceTo(f.g, you.position); f.g.userData.limbs.ra.rotation.x = -1.4; } f.msg.s.position.set(f.g.position.x, FLOOR + 2.7 + (fans.indexOf(f) % 3) * 0.32 + Math.sin(t * 2 + f.ph) * 0.06, f.g.position.z); f.msg.s.material.opacity = win(t, f.t0 + 2.4, 43.4, 0.4, 0.4); }
+  } else { for (const f of fans) { f.g.visible = false; f.msg.s.material.opacity = 0; } }
+
+  // ---------------- night: the shop locks, the locker, the default (43.5-52.5) ----------------
+  if (t >= 43.5 && t < 52.5) {
+    dex.visible = mo.visible = false;
+    idle(you, new THREE.Vector3(SHOP.x, SHOP.y, SHOP.z + 1.2), Math.PI, t);
+    const browse = win(t, 46.0, 50.0, 0.6, 0.6); you.userData.limbs.ra.rotation.x = -1.4 * browse; you.userData.limbs.head.rotation.x = -0.15 * browse; you.userData.limbs.head.rotation.y = Math.sin(t * 1.6) * 0.3 * browse;
+    shrug(you, win(t, 50.2, 52.4, 0.5, 0.3));
+    if (t >= 50.0) setOutfit(you, 0x8a8f99, 0x4a5a7a); else setOutfit(you, 0xffd04a, 0x3a3a3a);
+  }
+  locker.s.material.opacity = win(t, 45.6, 52.5, 0.5, 0.3); locker.s.position.set(SHOP.x - 1.6, SHOP.y + 2.5 + Math.sin(t) * 0.04, SHOP.z - 0.8);
+
+  // ---------------- ending at camp: the second token (52.5-60) ----------------
+  if (t >= 52.5) {
+    dex.visible = mo.visible = true; setOutfit(you, 0x8a8f99, 0x4a5a7a);
+    const look = win(t, 53.2, 56.2, 0.6, 0.6), pocket = smooth((t - 56.6) / 1.0);
+    idle(you, new THREE.Vector3(1.2, FLOOR, -0.6), 0.4, t); you.userData.limbs.ra.rotation.x = -1.5 * look - 0.3 * pocket; you.userData.limbs.ra.rotation.z = -0.9 * pocket; you.userData.limbs.head.rotation.x = 0.45 * look; you.userData.limbs.head.rotation.y = (1 - look) * 0.6 * (t > 57.6 ? 1 : 0);
+    idle(dex, new THREE.Vector3(-1.4, FLOOR, 0.9), 0, t, 1); faceTo(dex, you.position); idle(mo, new THREE.Vector3(3.4, FLOOR, 0.6), 0, t, 2); faceTo(mo, you.position);
+    handToken.visible = t < 57.4;
+  }
+  if (t < 10.2 || (t >= 15 && t < 33) || t >= 52.5) {} // visibility handled per act above
+
+  camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.08, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.04, kf(t, CAM.z));
+  camera.lookAt(kf(t, CAM.tx), kf(t, CAM.ty), kf(t, CAM.tz));
+  renderer.render(scene, camera);
+  overlay.update(t); updateHud(t);
+  return true;
+};
+window.renderAt(0);
+window.__sceneReady = true;
+</script>
+</body>
+</html>

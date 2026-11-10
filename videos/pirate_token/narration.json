@@ -1,0 +1,47 @@
+{
+  "title": "What if you got the Pirate Shop Token?",
+  "output": "what_if_you_got_the_pirate_shop_token_9x16.mp4",
+  "poster_time": 19,
+  "voice": "am_onyx",
+  "engine": "kokoro",
+  "speed_factor": 0.95,
+  "lang": "en-us",
+  "whisper": 0,
+  "lines": [
+    {
+      "id": 1,
+      "start": 0.8,
+      "text": "What if you got the pirate shop token?"
+    },
+    {
+      "id": 2,
+      "start": 6.0,
+      "text": "You open a chest, and something gold spins out. One in a hundred and thirty-seven thousand. You just found the pirate token. Your squad doesn't believe you."
+    },
+    {
+      "id": 3,
+      "start": 15.0,
+      "text": "By mid-morning you're in the shop with fourteen free days and one rule: no junk. You buy every skin you've wanted since season one. Thirty-one before lunch."
+    },
+    {
+      "id": 4,
+      "start": 24.0,
+      "text": "By noon you're buying for the memories. Every emote. Every pickaxe. Every bundle you skipped. Your locker goes from twelve items to four hundred."
+    },
+    {
+      "id": 5,
+      "start": 33.0,
+      "text": "By sunset the hard part starts. Everyone wants to be your duo. Two hundred messages ask for a gift. The token can't gift. So you say no, two hundred times."
+    },
+    {
+      "id": 6,
+      "start": 43.5,
+      "text": "At night the fourteen days run out and the shop locks. You open a locker with four hundred items, can't decide, and wear the default."
+    },
+    {
+      "id": 7,
+      "start": 52.5,
+      "text": "So if you found the token, what's the first skin you'd buy? And be honest, would you even tell your squad?"
+    }
+  ]
+}
