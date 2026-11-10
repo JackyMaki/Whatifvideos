@@ -1,0 +1,19 @@
+{
+  "title": "What if your teammates actually revived you?",
+  "output": "what_if_your_teammates_actually_revived_you_9x16.mp4",
+  "poster_time": 19,
+  "voice": "am_onyx",
+  "engine": "kokoro",
+  "speed_factor": 0.95,
+  "lang": "en-us",
+  "whisper": 0,
+  "lines": [
+    {"id": 1, "start": 0.8,  "text": "What if your teammates actually revived you?"},
+    {"id": 2, "start": 6.0,  "text": "You go down in the first fight, like always. Your teammates run past. One loots your chest. Then, for the first time in a hundred games, one turns around."},
+    {"id": 3, "start": 15.0, "text": "By mid-morning you're on your feet. He actually crouched. He actually waited the full ten seconds. You don't trust it. You check your health twice."},
+    {"id": 4, "start": 24.0, "text": "By noon the squad is unrecognizable. They share shields. They build a ramp before you ask. Someone says nice shot, and means it."},
+    {"id": 5, "start": 33.0, "text": "By sunset the storm closes in. Final circle, two squads left. And your teammates rotate with you, not away from you."},
+    {"id": 6, "start": 43.5, "text": "At night, you win. Your first win in a year. The screen says it. The group chat says nothing, because nobody can believe it."},
+    {"id": 7, "start": 52.5, "text": "So next match, when you go down in the first fight again, do they run back? Or was that the one time?"}
+  ]
+}

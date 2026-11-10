@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What if your teammates actually revived you — low poly scene</title>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="ui">
+  <div id="title" class="abs">What if your teammates <em>actually revived</em> you?</div>
+  <div id="hud" class="abs"><div id="hudLabel" class="label">Times revived, ever</div><div id="hudValue">0</div><div id="hudSub" class="label">06:00 · Sunrise</div></div>
+  <div id="cap" class="abs"><div id="capInner"></div></div>
+  <div id="footer" class="abs">A what‑if, every day</div>
+</div>
+
+<script type="module">
+import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+import { lam, glowMat, solid, roundedBox, person, animateGait } from '../../render/city.js';
+injectBaseCss();
+
+// an open island: valley terrain, trees and mountains from the shared world, flattened around the fight
+const world = createWorld({ seed: 777, canvas: document.getElementById('c'), ground: 'valley', flatRadius: 9, trees: 90, clouds: 8, shadows: true, shadowExtent: 30, fog: 0.011,
+  treeKeepOut: (x, z) => Math.hypot(x, z) < 14 || (Math.abs(x) < 6 && z > -24) });
+const { rng, R, renderer, scene, camera, hemi, sunLight, terrainH } = world;
+const SKY = { ...DAY,
+  SKY: {
+    top: [[0, '#3a4f7e'], [7, '#5f9be0'], [24, '#4f8fdc'], [34, '#5a5f9e'], [39, '#4a3a7a'], [44, '#1b1f4a'], [49, '#0a0820'], [60, '#08061c']],
+    mid: [[0, '#9a7aa6'], [7, '#a9cdf0'], [24, '#a6cdf2'], [34, '#c89ab0'], [39, '#ff8a5a'], [44, '#5a3d6e'], [49, '#2a1a3c'], [60, '#2a1a3c']],
+    bot: [[0, '#f0a878'], [7, '#dde9f3'], [24, '#e2eef6'], [34, '#ffc89a'], [39, '#ff6a3d'], [44, '#6a3d6e'], [49, '#3a2446'], [60, '#3a2446']],
+  },
+  hemiSky: [[0, '#8a7ab8'], [7, '#bfd8ff'], [34, '#e0b0b0'], [44, '#4a4070'], [60, '#443a66']],
+  hemiGround: [[0, '#4a3a3a'], [7, '#3a5a2a'], [44, '#1a2030'], [60, '#182028']] };
+const G = x => 0;    // ground height on the flat fight area (terrain is flattened to -0.6 near the centre; feet rest at -0.5 - 0.1)
+const FLOOR = -0.6;
+
+// ---------------------------------------------------------------------------
+// Timeline
+// ---------------------------------------------------------------------------
+const REVIVE_START = 15.4, REVIVE_END = 21.2, UP = 22.0;
+const WIN = 46.0;
+const storm = t => kf(t, [[0, 95], [24, 70], [33, 45], [41, 26], [50, 18], [60, 18]]);
+
+// ---------------------------------------------------------------------------
+// Props: loot chest, wooden ramp, small tower, storm wall, banners
+// ---------------------------------------------------------------------------
+const wood = lam(0xb98a4e), woodDark = lam(0x8a6236), metal = lam(0x3a3f48), gold = lam(0xd9b84a, { emissive: 0x6a5010 });
+const CHEST = new THREE.Vector3(4.2, FLOOR, -2.6);
+const chest = new THREE.Group(); chest.position.copy(CHEST); chest.rotation.y = -0.5; scene.add(chest);
+{ const body = solid(roundedBox(1.3, 0.7, 0.8, 0.15), woodDark); body.position.y = 0.35; chest.add(body); const lidPiv = new THREE.Group(); lidPiv.position.set(0, 0.7, -0.4); chest.add(lidPiv); const lid = solid(roundedBox(1.3, 0.3, 0.8, 0.3), wood); lid.position.set(0, 0.15, 0.4); lidPiv.add(lid); const clasp = solid(new THREE.BoxGeometry(0.2, 0.2, 0.06), gold); clasp.position.set(0, 0.55, 0.42); chest.add(clasp); chest.userData.lid = lidPiv;
+  const glow = new THREE.PointLight(0xffd27a, 0, 6, 1.6); glow.position.set(0, 0.9, 0); chest.add(glow); chest.userData.glow = glow; }
+const RAMP = new THREE.Vector3(-5.5, FLOOR, -6.5);
+const rampPieces = [];
+for (let i = 0; i < 4; i++) { const piece = solid(new THREE.BoxGeometry(2.4, 0.14, 1.3), wood); piece.position.set(RAMP.x, RAMP.y + 0.35 + i * 0.75, RAMP.z - i * 1.05); piece.rotation.x = -0.62; piece.visible = false; scene.add(piece); rampPieces.push(piece); const post = solid(new THREE.BoxGeometry(0.12, 0.7 + i * 0.75, 0.12), woodDark); post.position.set(RAMP.x - 1.1, RAMP.y + (0.7 + i * 0.75) / 2, RAMP.z - i * 1.05 - 0.5); post.visible = false; scene.add(post); rampPieces.push(post); }
+// a little wooden tower (the high ground for the final circle)
+const TOWER = new THREE.Vector3(7.5, FLOOR, -11);
+const towerTop = TOWER.y + 3.2;
+{ for (const [sx, sz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) { const p = solid(new THREE.BoxGeometry(0.18, 3.2, 0.18), woodDark); p.position.set(TOWER.x + sx, TOWER.y + 1.6, TOWER.z + sz); scene.add(p); }
+  const deck = solid(new THREE.BoxGeometry(3.2, 0.16, 3.2), wood); deck.position.set(TOWER.x, towerTop, TOWER.z); scene.add(deck);
+  for (const [sx, sz, w, d] of [[0, -1.5, 3.2, 0.1], [0, 1.5, 3.2, 0.1], [-1.5, 0, 0.1, 3.2], [1.5, 0, 0.1, 3.2]]) { const rail = solid(new THREE.BoxGeometry(w, 0.08, d), wood); rail.position.set(TOWER.x + sx, towerTop + 0.9, TOWER.z + sz); scene.add(rail); }
+  const stairs = []; for (let i = 0; i < 6; i++) { const st = solid(new THREE.BoxGeometry(1.2, 0.12, 0.6), wood); st.position.set(TOWER.x + 2.2 + i * 0.0, TOWER.y + 0.5 + i * 0.5, TOWER.z + 1.9 - i * 0.55 + 0.0); scene.add(st); } }
+// storm wall: a tall translucent purple cylinder that shrinks through the day
+const stormMat = new THREE.MeshBasicMaterial({ color: 0x9a4df5, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false, fog: false, toneMapped: false });
+const stormWall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 60, 64, 1, true), stormMat); stormWall.position.set(0, 25, -6); scene.add(stormWall);
+const stormInner = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 60, 64, 1, true), new THREE.MeshBasicMaterial({ color: 0xc78bff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, fog: false, toneMapped: false })); stormInner.position.copy(stormWall.position); scene.add(stormInner);
+// fireworks
+const fireworks = [];
+for (let k = 0; k < 5; k++) { const n = 90; const pos = new Float32Array(n * 3); const seeds = []; for (let i = 0; i < n; i++) { const az = R(0, 6.28), el = R(-1.3, 1.3); seeds.push({ dx: Math.cos(el) * Math.cos(az), dy: Math.sin(el), dz: Math.cos(el) * Math.sin(az), v: R(5, 9) }); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: [0xffd27a, 0x7cf5ff, 0xff8ac8, 0xb8ff7a, 0xffffff][k], size: 0.35, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, map: radialTexture(), alphaTest: 0.01, fog: false })); scene.add(pts);
+  fireworks.push({ pts, pos, seeds, t0: WIN + 0.4 + k * 1.1, origin: new THREE.Vector3(R(-8, 8), R(16, 24), R(-26, -14)) }); }
+const winLight = new THREE.PointLight(0xffd27a, 0, 30, 1.4); winLight.position.set(0, 6, -4); scene.add(winLight);
+const moonLamp = new THREE.PointLight(0x9fb4ff, 0, 30, 1.4); moonLamp.position.set(3, 6, 4); scene.add(moonLamp);
+
+// ---------------------------------------------------------------------------
+// Holo panels drawn each frame: DOWNED/HP over the hero, revive ring, win banner, shield share
+// ---------------------------------------------------------------------------
+function makePanel(w, h, scale) { const c = document.createElement('canvas'); c.width = w; c.height = h; const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 })); s.scale.set(scale, scale * h / w, 1); scene.add(s); return { c, g: c.getContext('2d'), tex, s }; }
+const downedP = makePanel(640, 220, 2.4), reviveP = makePanel(512, 512, 1.6), winP = makePanel(1024, 420, 3.6), hpP = makePanel(640, 220, 2.2);
+function drawDowned(p, hp, label = 'DOWNED') { const g = p.g; g.clearRect(0, 0, 640, 220); g.fillStyle = 'rgba(20,10,14,0.78)'; g.beginPath(); g.roundRect(10, 10, 620, 200, 28); g.fill(); g.strokeStyle = '#ff3b2f'; g.lineWidth = 8; g.stroke(); g.fillStyle = '#ff3b2f'; g.font = '700 86px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(label, 320, 78); g.fillStyle = 'rgba(255,255,255,0.18)'; g.roundRect(60, 140, 520, 36, 18); g.fill(); g.fillStyle = '#ff3b2f'; g.beginPath(); g.roundRect(60, 140, Math.max(36, 520 * hp), 36, 18); g.fill(); p.tex.needsUpdate = true; }
+function drawHp(p, hp, sh) { const g = p.g; g.clearRect(0, 0, 640, 220); g.fillStyle = 'rgba(10,20,30,0.75)'; g.beginPath(); g.roundRect(10, 10, 620, 200, 28); g.fill(); g.fillStyle = '#e6fbff'; g.font = '600 46px Inter, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(`HP ${Math.round(hp)}`, 50, 62); g.fillText(`SHIELD ${Math.round(sh)}`, 50, 150); g.fillStyle = 'rgba(255,255,255,0.15)'; g.fillRect(300, 44, 300, 34); g.fillRect(300, 132, 300, 34); g.fillStyle = '#3bd35a'; g.fillRect(300, 44, 3 * hp, 34); g.fillStyle = '#3f9fff'; g.fillRect(300, 132, 3 * sh, 34); p.tex.needsUpdate = true; }
+function drawRevive(p, u) { const g = p.g; g.clearRect(0, 0, 512, 512); g.lineWidth = 34; g.strokeStyle = 'rgba(255,255,255,0.22)'; g.beginPath(); g.arc(256, 256, 190, 0, 6.283); g.stroke(); g.strokeStyle = '#7cf5ff'; g.beginPath(); g.arc(256, 256, 190, -Math.PI / 2, -Math.PI / 2 + 6.283 * u); g.stroke(); g.fillStyle = '#e6fbff'; g.font = '700 110px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(`${Math.round(u * 100)}%`, 256, 236); g.font = '600 44px Inter, sans-serif'; g.fillText('REVIVING', 256, 330); p.tex.needsUpdate = true; }
+function drawWin(p) { const g = p.g; g.clearRect(0, 0, 1024, 420); g.fillStyle = 'rgba(20,14,40,0.82)'; g.beginPath(); g.roundRect(12, 12, 1000, 396, 40); g.fill(); g.strokeStyle = '#ffd27a'; g.lineWidth = 10; g.stroke(); g.fillStyle = '#ffd27a'; g.font = '800 150px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('#1 SQUAD WIN', 512, 170); g.fillStyle = '#e6fbff'; g.font = '600 56px Inter, sans-serif'; g.fillText('FIRST WIN THIS YEAR', 512, 310); p.tex.needsUpdate = true; }
+drawWin(winP);
+
+// ---------------------------------------------------------------------------
+// Squad: you (downed), Dex (cap) and Mo (long hair), pickaxes on their backs
+// ---------------------------------------------------------------------------
+function squaddie(opts) { const g = person(world, { ...opts, bag: true }); const pick = new THREE.Group(); const handle = solid(new THREE.BoxGeometry(0.08, 1.1, 0.08), woodDark); pick.add(handle); const head = solid(new THREE.BoxGeometry(0.5, 0.12, 0.12), metal); head.position.y = 0.5; pick.add(head); pick.position.set(0.25, 1.4, -0.4); pick.rotation.z = 0.5; g.add(pick); scene.add(g); return g; }
+const you = squaddie({ skin: 0xf1c27d, shirt: 0x3b7dd8, pants: 0x2b3a55, hair: 0x4a3020, hairStyle: 'short', jacket: false });
+const dex = squaddie({ skin: 0xc68642, shirt: 0xff8a3d, pants: 0x1f1f24, hair: 0x111111, hairStyle: 'cap', jacket: false });
+const mo = squaddie({ skin: 0xffdbac, shirt: 0x8e5ad8, pants: 0x3a3a3a, hair: 0x6a3a2a, hairStyle: 'long', jacket: false });
+const shieldPot = solid(new THREE.CylinderGeometry(0.1, 0.12, 0.3, 8), new THREE.MeshLambertMaterial({ color: 0x3f9fff, emissive: 0x1f5fbf, emissiveIntensity: 0.6 })); shieldPot.visible = false; scene.add(shieldPot);
+
+const YOU_DOWN = new THREE.Vector3(0, FLOOR, 0.5);
+function downedPose(g, amount = 1, crawl = 0) {   // on the knees, one hand on the ground, head low
+  const Lb = g.userData.limbs; g.position.y = FLOOR - 0.36 * amount;
+  Lb.ll.rotation.x = -1.6 * amount; Lb.rl.rotation.x = -1.6 * amount; g.userData.torso.rotation.x = 0.55 * amount;
+  Lb.la.rotation.x = 0.9 * amount + Math.sin(crawl) * 0.3; Lb.ra.rotation.x = 0.9 * amount - Math.sin(crawl) * 0.3; Lb.la.rotation.z = 0.15; Lb.ra.rotation.z = -0.15; Lb.head.rotation.x = 0.35 * amount; Lb.head.rotation.y = 0;
+}
+function crouchPose(g, u, t) {                       // kneeling beside the downed player, hand out
+  const Lb = g.userData.limbs; g.position.y = FLOOR - 0.34 * u; Lb.ll.rotation.x = -1.5 * u; Lb.rl.rotation.x = -0.5 * u; g.userData.torso.rotation.x = 0.3 * u;
+  Lb.ra.rotation.x = -1.1 * u; Lb.ra.rotation.z = -0.1; Lb.la.rotation.x = -0.3 * u; Lb.la.rotation.z = 0.1; Lb.head.rotation.x = 0.3 * u; Lb.head.rotation.y = 0;
+}
+function run(g, from, to, u, t, speed = 14) { g.position.lerpVectors(from, to, u); g.position.y = FLOOR; g.rotation.y = Math.atan2(to.x - from.x, to.z - from.z); animateGait(g, t * speed, 'run'); }
+function idle(g, pos, ry, t, ph = 0) { g.position.copy(pos); g.position.y = FLOOR; g.rotation.y = ry; animateGait(g, t * 1.4 + ph, 'idle'); }
+function hop(g, pos, ry, t, ph) { idle(g, pos, ry, t, ph); const b = Math.max(0, Math.sin(t * 6 + ph)); g.position.y = FLOOR + b * 0.45; const Lb = g.userData.limbs; Lb.la.rotation.x = -2.6 + Math.sin(t * 6 + ph) * 0.3; Lb.ra.rotation.x = -2.6 - Math.sin(t * 6 + ph) * 0.3; Lb.la.rotation.z = 0.4; Lb.ra.rotation.z = -0.4; }
+
+// positions
+const P = {
+  dexStart: new THREE.Vector3(-9, FLOOR, 6), dexPass: new THREE.Vector3(6, FLOOR, -9), dexBack: new THREE.Vector3(0.9, FLOOR, 1.1),
+  moStart: new THREE.Vector3(-4, FLOOR, 8), moChest: new THREE.Vector3(3.3, FLOOR, -1.6), moRamp: new THREE.Vector3(RAMP.x + 1.8, FLOOR, RAMP.z + 1.6),
+  group: [new THREE.Vector3(0.0, FLOOR, 0.5), new THREE.Vector3(1.6, FLOOR, 1.4), new THREE.Vector3(-1.6, FLOOR, 1.3)],
+  tower: [new THREE.Vector3(TOWER.x - 0.6, towerTop, TOWER.z + 0.2), new THREE.Vector3(TOWER.x + 0.8, towerTop, TOWER.z - 0.6), new THREE.Vector3(TOWER.x - 0.2, towerTop, TOWER.z - 1.0)],
+  stairsBase: new THREE.Vector3(TOWER.x + 2.2, FLOOR, TOWER.z + 2.6),
+  // next match
+  next: [new THREE.Vector3(-1.5, FLOOR, 2.0), new THREE.Vector3(-6, FLOOR, 3), new THREE.Vector3(-3, FLOOR, 5)],
+};
+function climbTower(g, u, t, slot) {   // up the stairs, then onto the deck spot
+  const a = P.stairsBase, b = new THREE.Vector3(TOWER.x + 2.2, towerTop, TOWER.z - 1.0), c = P.tower[slot];
+  if (u < 0.7) { const k = u / 0.7; g.position.lerpVectors(a, b, k); g.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); animateGait(g, t * 11, 'walk'); }
+  else { const k = smooth((u - 0.7) / 0.3); g.position.lerpVectors(b, c, k); g.rotation.y = Math.atan2(c.x - b.x, c.z - b.z); animateGait(g, t * 9, 'walk', 1 - k); }
+}
+
+// ---------------------------------------------------------------------------
+// Camera & overlay
+// ---------------------------------------------------------------------------
+const CAM = {
+  x: [[0, 2.5], [6, 2.0], [8.5, -1.5], [14.5, -1.0], [16, 2.6], [23, 2.4], [24.5, 3.8], [32.5, 3.4], [34, 1.5], [42.5, 11.0], [44, 10.5], [52, 11.5], [53.5, 3.0], [60, 1.5]],
+  y: [[0, 2.2], [6, 1.9], [8.5, 1.8], [14.5, 1.8], [16, 1.7], [23, 1.9], [24.5, 2.3], [32.5, 2.2], [34, 3.0], [42.5, towerTop + 1.6], [44, towerTop + 1.5], [52, towerTop + 2.4], [53.5, 1.9], [60, 2.4]],
+  z: [[0, 7.5], [6, 6.5], [8.5, 6.0], [14.5, 6.5], [16, 4.8], [23, 5.0], [24.5, 5.2], [32.5, 4.8], [34, 8.0], [42.5, TOWER.z + 6.5], [44, TOWER.z + 6.0], [52, TOWER.z + 7.5], [53.5, 7.5], [60, 9.5]],
+  tx: [[0, 0.5], [6, 1.5], [8.5, 2.0], [14.5, 1.0], [16, 0.4], [23, 0.4], [24.5, -1.4], [32.5, -1.8], [34, 3.5], [42.5, TOWER.x - 0.2], [44, TOWER.x - 0.2], [52, TOWER.x], [53.5, -2.5], [60, -4.0]],
+  ty: [[0, 0.3], [6, 0.4], [8.5, 0.4], [14.5, 0.4], [16, 0.3], [23, 0.6], [24.5, 0.8], [32.5, 0.8], [34, 1.0], [42.5, towerTop + 0.6], [44, towerTop + 0.6], [52, towerTop + 2.0], [53.5, 0.3], [60, 0.6]],
+  tz: [[0, -1.0], [6, -2.5], [8.5, -3.5], [14.5, -1.0], [16, 0.5], [23, 0.5], [24.5, -1.4], [32.5, -2.4], [34, -9.0], [42.5, TOWER.z - 1], [44, TOWER.z - 1], [52, TOWER.z - 4], [53.5, 0.5], [60, -0.5]],
+};
+const overlay = createOverlay({ highlight: /(like always|run past|loots your chest|one turns around|on your feet|actually crouched|the full ten seconds|check your health twice|unrecognizable|share shields|before you ask|nice shot|the storm closes in|final circle|with you, not away from you|you win|first win in a year|says nothing|nobody can believe it|run back|the one time)/gi });
+const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
+function updateHud(t) {
+  if (t < 43.5) { hud.label.textContent = 'Times revived, ever'; hud.value.textContent = t >= REVIVE_END ? '1' : '0'; hud.value.style.color = t >= REVIVE_END ? '#7cf5ff' : '#fff'; }
+  else { hud.label.textContent = 'Wins this year'; hud.value.textContent = t >= WIN ? '1' : '0'; hud.value.style.color = t >= WIN ? '#ffd27a' : '#fff'; }
+}
+
+// ---------------------------------------------------------------------------
+// Per-frame update
+// ---------------------------------------------------------------------------
+const tmpV = new THREE.Vector3();
+window.renderAt = function (t) {
+  const { nt } = world.updateEnvironment(t, SKY);
+  sunLight.position.set(lerp(-34, 30, clamp(t / 40, 0, 1)), lerp(20, 34, Math.sin(clamp(t / 40, 0, 1) * Math.PI)), 18);
+  moonLamp.intensity = nt * 60; if (t > 53) moonLamp.position.set(-2, 6, 4); else if (t > 42) moonLamp.position.set(TOWER.x + 2, towerTop + 5, TOWER.z + 4); else moonLamp.position.set(3, 6, 4);
+  const r = storm(t); stormWall.scale.set(r, 1, r); stormInner.scale.set(r * 0.985, 1, r * 0.985); stormMat.opacity = 0.3 + 0.06 * Math.sin(t * 2.1);
+
+  // --- you: downed, revived, up, then downed again next match ---
+  const next = t >= 53.2;
+  if (t < REVIVE_START) { you.position.copy(YOU_DOWN); you.rotation.y = 0.4; downedPose(you, 1, t * 2.2); }
+  else if (t < UP) { you.position.copy(YOU_DOWN); you.rotation.y = 0.4; downedPose(you, 1, 0); }
+  else if (t < 23.4) { const u = smooth((t - UP) / 1.4); you.position.copy(YOU_DOWN); you.rotation.y = lerp(0.4, 0, u); downedPose(you, 1 - u, 0); const Lb = you.userData.limbs; Lb.ra.rotation.x = lerp(Lb.ra.rotation.x, -1.3, u); Lb.head.rotation.x = lerp(Lb.head.rotation.x, 0.4, u); }   // getting up, looking at the health panel
+  else if (t < 24.6) { idle(you, YOU_DOWN, 0, t); const Lb = you.userData.limbs; Lb.ra.rotation.x = -1.3; Lb.head.rotation.x = 0.4; }
+  else if (t < 33.8) { idle(you, P.group[0], -0.3, t); const Lb = you.userData.limbs; const take = win(t, 26.2, 28.0, 0.6, 0.6); Lb.la.rotation.x = -1.1 * take; Lb.la.rotation.z = 0.5 * take; if (t > 28.4) { const drink = win(t, 28.4, 30.2, 0.4, 0.5); Lb.la.rotation.x = -2.4 * drink - 1.1 * (1 - drink) * take; Lb.la.rotation.z = 0.5; Lb.head.rotation.x = -0.3 * drink; } }
+  else if (t < 36.6) { const u = smooth((t - 33.8) / 2.8); run(you, P.group[0], P.stairsBase, u, t, 12); }
+  else if (t < 40.0) { climbTower(you, (t - 36.6) / 3.4, t, 0); }
+  else if (t < 53.2) { const look = t < WIN; you.position.copy(P.tower[0]); you.rotation.y = Math.PI * 0.85; if (t >= WIN + 0.6) hop(you, P.tower[0], Math.PI * 0.85, t, 0); else { animateGait(you, t * 1.4, 'idle'); you.position.y = towerTop; you.userData.limbs.head.rotation.x = look ? 0.1 : -0.3; } you.position.y = Math.max(you.position.y, towerTop) + (t >= WIN + 0.6 ? Math.max(0, Math.sin(t * 6)) * 0.45 : 0); }
+  else { const u = smooth((t - 53.2) / 1.0); you.position.copy(P.next[0]); you.rotation.y = 0.5; downedPose(you, u, t * 2.2); }
+
+  // --- Dex: runs straight past, then turns around, crouches, revives ---
+  if (t < 9.6) { const u = clamp((t - 4.0) / 5.6, 0, 1); run(dex, P.dexStart, P.dexPass, u, t); }
+  else if (t < 12.2) { const u = smooth((t - 9.6) / 0.9); idle(dex, P.dexPass, Math.atan2(P.dexPass.x - P.dexStart.x, P.dexPass.z - P.dexStart.z) + Math.PI * u, t); }           // turns around
+  else if (t < REVIVE_START) { const u = smooth((t - 12.2) / 3.2); run(dex, P.dexPass, P.dexBack, u, t); }
+  else if (t < REVIVE_END + 0.8) { const u = smooth((t - REVIVE_START) / 0.7) * (1 - smooth((t - REVIVE_END) / 0.8)); dex.position.copy(P.dexBack); dex.rotation.y = Math.atan2(YOU_DOWN.x - P.dexBack.x, YOU_DOWN.z - P.dexBack.z); crouchPose(dex, u, t); }
+  else if (t < 33.8) { idle(dex, P.group[1], Math.atan2(P.group[0].x - P.group[1].x, P.group[0].z - P.group[1].z), t, 1.3); const nod = win(t, 30.2, 31.8, 0.4, 0.4); dex.userData.limbs.head.rotation.x = Math.sin(t * 5) * 0.08 * nod; dex.userData.limbs.ra.rotation.x = -0.9 * nod; }
+  else if (t < 37.2) { const u = smooth((t - 34.4) / 2.8); run(dex, P.group[1], P.stairsBase, u, t, 12); }
+  else if (t < 40.6) { climbTower(dex, (t - 37.2) / 3.4, t, 1); }
+  else if (t < 53.2) { if (t >= WIN + 0.6) hop(dex, P.tower[1], Math.PI * 0.6, t, 2.1); else { idle(dex, P.tower[1], Math.PI * 0.6, t, 1.3); dex.position.y = towerTop; } dex.position.y = Math.max(dex.position.y, towerTop) + (t >= WIN + 0.6 ? Math.max(0, Math.sin(t * 6 + 2.1)) * 0.45 : 0); }
+  else { const u = clamp((t - 53.6) / 3.4, 0, 1); const away = new THREE.Vector3(-7.5, FLOOR, -2.5); if (t < 57.0) run(dex, P.next[1], away, u, t); else { const back = smooth((t - 57.0) / 1.2); idle(dex, away, Math.atan2(P.next[1].x - away.x, P.next[1].z - away.z) + Math.PI * (1 - back), t); } }   // runs off... then turns
+
+  // --- Mo: loots the chest, later shares a shield and builds the ramp ---
+  if (t < 8.4) { const u = clamp((t - 5.0) / 3.4, 0, 1); run(mo, P.moStart, P.moChest, u, t); }
+  else if (t < 12.6) { idle(mo, P.moChest, Math.atan2(CHEST.x - P.moChest.x, CHEST.z - P.moChest.z), t, 0.7); const open = smooth((t - 8.6) / 0.8); const Lb = mo.userData.limbs; Lb.ra.rotation.x = -1.0 - 0.3 * Math.sin(t * 4) * (t > 9.4 ? 1 : 0); mo.userData.torso.rotation.x = 0.3 * open; Lb.head.rotation.x = 0.4 * open; }
+  else if (t < REVIVE_END + 1.0) { const u = smooth((t - 12.6) / 1.2); const watch = new THREE.Vector3(2.2, FLOOR, -0.4); mo.position.lerpVectors(P.moChest, watch, u); mo.rotation.y = Math.atan2(YOU_DOWN.x - watch.x, YOU_DOWN.z - watch.z); if (u < 1) animateGait(mo, t * 9, 'walk'); else animateGait(mo, t * 1.4 + 0.7, 'idle'); }
+  else if (t < 24.6) { const u = smooth((t - REVIVE_END - 1.0) / 1.2); mo.position.lerpVectors(new THREE.Vector3(2.2, FLOOR, -0.4), P.group[2], u); mo.rotation.y = Math.atan2(P.group[2].x - 2.2, P.group[2].z + 0.4); if (u < 1) animateGait(mo, t * 9, 'walk'); else animateGait(mo, t * 1.4 + 0.7, 'idle'); }
+  else if (t < 28.6) { idle(mo, P.group[2], Math.atan2(P.group[0].x - P.group[2].x, P.group[0].z - P.group[2].z), t, 0.7); const give = win(t, 25.0, 27.6, 0.6, 0.6); mo.userData.limbs.ra.rotation.x = -1.2 * give; mo.userData.limbs.ra.rotation.z = -0.2 * give; }
+  else if (t < 30.6) { const u = smooth((t - 28.6) / 1.6); mo.position.lerpVectors(P.group[2], P.moRamp, u); mo.rotation.y = Math.atan2(P.moRamp.x - P.group[2].x, P.moRamp.z - P.group[2].z); animateGait(mo, t * 11, 'run'); }
+  else if (t < 34.4) { idle(mo, P.moRamp, Math.atan2(RAMP.x - P.moRamp.x, RAMP.z - P.moRamp.z), t, 0.7); const Lb = mo.userData.limbs; Lb.la.rotation.x = -1.4 + Math.sin(t * 7) * 0.5; Lb.ra.rotation.x = -1.4 - Math.sin(t * 7) * 0.5; }   // building
+  else if (t < 38.0) { const u = smooth((t - 34.8) / 3.0); run(mo, P.moRamp, P.stairsBase, u, t, 12); }
+  else if (t < 41.4) { climbTower(mo, (t - 38.0) / 3.4, t, 2); }
+  else if (t < 53.2) { if (t >= WIN + 0.6) hop(mo, P.tower[2], Math.PI * 1.1, t, 4.0); else { idle(mo, P.tower[2], Math.PI * 1.1, t, 0.7); mo.position.y = towerTop; } mo.position.y = Math.max(mo.position.y, towerTop) + (t >= WIN + 0.6 ? Math.max(0, Math.sin(t * 6 + 4.0)) * 0.45 : 0); }
+  else { const u = clamp((t - 53.4) / 4.0, 0, 1); run(mo, P.next[2], new THREE.Vector3(-16, FLOOR, 2), u, t); }
+
+  // props: chest lid, ramp pieces, shield potion, storm
+  chest.userData.lid.rotation.x = -smooth((t - 8.6) / 0.8) * 1.6 * (1 - smooth((t - 12.4) / 0.6)); chest.userData.glow.intensity = (t > 8.8 && t < 12.6 ? 4 : 0);
+  for (let i = 0; i < rampPieces.length; i++) rampPieces[i].visible = t > 30.8 + Math.floor(i / 2) * 0.8;
+  { const u = win(t, 25.4, 27.2, 0.2, 0.2); shieldPot.visible = u > 0 && t < 30.4; if (shieldPot.visible) { const from = new THREE.Vector3(P.group[2].x + 0.4, 1.2, P.group[2].z + 0.3), to = new THREE.Vector3(P.group[0].x - 0.45, 1.3, P.group[0].z + 0.3); shieldPot.position.lerpVectors(from, to, smooth((t - 25.4) / 1.8)); if (t > 28.4) shieldPot.position.set(P.group[0].x - 0.45, 1.3 + win(t, 28.4, 30.2, 0.4, 0.5) * 0.6, P.group[0].z + 0.3); } }
+
+  // panels
+  const hpDown = t < REVIVE_END ? Math.max(0.25, 0.75 - t * 0.012) : 0.3;
+  const downedOn = Math.max(win(t, 5.8, REVIVE_START + 0.3, 0.8, 0.3), win(t, 53.4, 61, 0.6, 0.1));
+  drawDowned(downedP, t >= 53.4 ? 0.7 : hpDown, t >= 53.4 ? 'DOWNED AGAIN' : 'DOWNED'); downedP.s.material.opacity = downedOn; downedP.s.position.set(you.position.x, you.position.y + 1.9, you.position.z);
+  const rev = clamp((t - REVIVE_START) / (REVIVE_END - REVIVE_START), 0, 1); drawRevive(reviveP, rev); reviveP.s.material.opacity = win(t, REVIVE_START, REVIVE_END + 0.4, 0.3, 0.4); reviveP.s.position.set(you.position.x + 1.7, you.position.y + 2.3, you.position.z + 0.8);
+  const hpOn = win(t, 22.6, 25.0, 0.4, 0.5); drawHp(hpP, lerp(30, 100, smooth((t - 23.0) / 1.5)), 0); hpP.s.material.opacity = hpOn; hpP.s.position.set(you.position.x + 1.1, you.position.y + 2.4, you.position.z + 0.6);
+  winP.s.material.opacity = win(t, WIN, 52.6, 0.3, 1.2); winP.s.position.set(TOWER.x - 0.2, towerTop + 3.7 + Math.sin(t) * 0.1, TOWER.z - 2.2); winLight.intensity = win(t, WIN, 52.6, 0.3, 1.2) * 30;
+  for (const f of fireworks) { const u = (t - f.t0) / 1.8; const on = u > 0 && u < 1; f.pts.material.opacity = on ? (1 - u) : 0; if (on) { for (let i = 0; i < f.seeds.length; i++) { const s = f.seeds[i]; f.pos[i * 3] = f.origin.x + s.dx * s.v * u; f.pos[i * 3 + 1] = f.origin.y + s.dy * s.v * u - 4 * u * u; f.pos[i * 3 + 2] = f.origin.z + s.dz * s.v * u; } f.pts.geometry.attributes.position.needsUpdate = true; } }
+
+  camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.1, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.05, kf(t, CAM.z));
+  camera.lookAt(kf(t, CAM.tx), kf(t, CAM.ty), kf(t, CAM.tz));
+  renderer.render(scene, camera);
+  overlay.update(t); updateHud(t);
+  return true;
+};
+window.renderAt(0);
+window.__sceneReady = true;
+</script>
+</body>
+</html>
