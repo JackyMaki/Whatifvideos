@@ -1,0 +1,47 @@
+{
+  "title": "What if the United States took over the world?",
+  "output": "what_if_the_united_states_took_over_the_world_9x16.mp4",
+  "poster_time": 12,
+  "voice": "am_onyx",
+  "engine": "kokoro",
+  "speed_factor": 0.95,
+  "lang": "en-us",
+  "whisper": 0,
+  "lines": [
+    {
+      "id": 1,
+      "start": 0.8,
+      "text": "What if the United States took over the world?"
+    },
+    {
+      "id": 2,
+      "start": 6.0,
+      "text": "It starts with a vote. Every country says yes to the same offer. A flag goes up over your square. Fifty stars, then one hundred and ninety-five."
+    },
+    {
+      "id": 3,
+      "start": 15.0,
+      "text": "By mid-morning the signs change. Kilometers become miles. Twenty degrees is sixty-eight. And your café charges in dollars, with free refills."
+    },
+    {
+      "id": 4,
+      "start": 24.0,
+      "text": "By noon the biggest election in history begins. Eight billion voters, one ballot, one very long line. It goes around the square twice."
+    },
+    {
+      "id": 5,
+      "start": 33.0,
+      "text": "By sunset you learn the catch. One country, twenty-four time zones. Football means two different sports. And the whole planet files the same tax form in April."
+    },
+    {
+      "id": 6,
+      "start": 43.5,
+      "text": "At night, the parade. Fireworks over a city that was another country yesterday. Everyone sings an anthem they learned that afternoon."
+    },
+    {
+      "id": 7,
+      "start": 52.5,
+      "text": "So, the biggest country in history, or the longest line at the DMV? You're still in it. It moved one spot."
+    }
+  ]
+}

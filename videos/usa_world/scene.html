@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What if the United States took over the world — street-level low poly scene</title>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="ui">
+  <div id="title" class="abs">What if the United States <em>took over the world</em>?</div>
+  <div id="hud" class="abs"><div id="hudLabel" class="label">Countries</div><div id="hudValue">195</div><div id="hudSub" class="label">06:00 · Sunrise</div></div>
+  <div id="cap" class="abs"><div id="capInner"></div></div>
+  <div id="footer" class="abs">A what‑if, every day</div>
+</div>
+
+<script type="module">
+import { THREE, mulberry32, clamp, smooth, lerp, frac, kf, kfColor, win, radialTexture, textSprite, DAY, createWorld, createOverlay, injectBaseCss } from '../../render/common.js';
+import { L, lam, glowMat, solid, roundedBox, buildStreets, buildBuildings, addStorefront, buildStreetFurniture, updateTrafficLights, person, animateGait, makePedestrians, placePedestrian, buildCars } from '../../render/city.js';
+injectBaseCss();
+
+const world = createWorld({ seed: 1776, canvas: document.getElementById('c'), ground: 'none', shadows: true, shadowExtent: 34, fog: 0.014, clouds: 9 });
+const { rng, R, renderer, scene, camera, hemi, sunLight } = world;
+const SKY = { ...DAY,
+  SKY: {
+    top: [[0, '#3a4f7e'], [7, '#5f9be0'], [24, '#4f8fdc'], [34, '#5a5f9e'], [39, '#4a3a7a'], [44, '#1b1f4a'], [49, '#070a20'], [60, '#06081c']],
+    mid: [[0, '#9a7aa6'], [7, '#a9cdf0'], [24, '#a6cdf2'], [34, '#c89ab0'], [39, '#ff8a5a'], [44, '#5a3d6e'], [49, '#1c1a3a'], [60, '#1a1a38']],
+    bot: [[0, '#f0a878'], [7, '#dde9f3'], [24, '#e2eef6'], [34, '#ffc89a'], [39, '#ff6a3d'], [44, '#6a3d6e'], [49, '#2a2446'], [60, '#282444']],
+  },
+  hemiSky: [[0, '#8a7ab8'], [7, '#bfd8ff'], [34, '#e0b0b0'], [44, '#44508e'], [60, '#3c4886']],
+  hemiGround: [[0, '#4a3a3a'], [7, '#55565a'], [44, '#232a44'], [60, '#1f2640']] };
+
+// ---------------------------------------------------------------------------
+// City with the café on the left building (series layout), a flagpole and a vote booth on the plaza
+// ---------------------------------------------------------------------------
+buildStreets(world);
+const buildings = buildBuildings(world, { nearHeights: [5, 9], sideHeights: [5, 8.5] });
+const { lampHeads, trafficLights } = buildStreetFurniture(world, { benches: false });
+const cars = buildCars(world, 12);
+const stores = [];
+for (const [bx, nm, col, aw] of [[3, 'MARKET', '#2f7fbf', 0x2f5f8f], [-10, 'BOOKS', '#7a4a9a', 0x5a3a7a], [15, 'PHARMACY', '#2f6f4e', 0x2f6f4e]]) { const b = buildings.filter(b => b.row === 'shop' && !b.store).sort((a, c) => Math.abs(a.x - bx) - Math.abs(c.x - bx))[0]; if (b) { b.store = addStorefront(world, b, { name: nm, color: col, awning: aw }); stores.push(b); } }
+const cafeB = buildings.filter(b => b.side === -1).sort((a, b) => Math.abs(a.z - 2) - Math.abs(b.z - 2))[0];
+const DOOR_X = cafeB.x + cafeB.w / 2, DOOR_Z = cafeB.z + 0.4;
+{
+  const frame = solid(new THREE.BoxGeometry(0.16, 2.3, 1.3), lam(0x3a3a40)); frame.position.set(DOOR_X + 0.02, 0.65, DOOR_Z); scene.add(frame);
+  const glass = solid(new THREE.BoxGeometry(0.1, 1.6, 3.2), lam(0x4a5466)); glass.position.set(DOOR_X + 0.02, 0.5, DOOR_Z - 2.6); scene.add(glass);
+  const aw = solid(new THREE.BoxGeometry(1.4, 0.1, 5.4), lam(0x2f6f4e)); aw.position.set(DOOR_X + 0.7, 2.25, DOOR_Z - 1.4); scene.add(aw);
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 200; const g = c.getContext('2d'); g.fillStyle = '#2f6f4e'; g.fillRect(0, 0, 1024, 200); g.fillStyle = '#f4efe6'; g.font = '700 118px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('CAFÉ', 512, 96);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = solid(new THREE.BoxGeometry(0.22, 0.95, 4.8), lam(0x2f6f4e)); sign.position.set(DOOR_X + 0.12, 3.0, DOOR_Z - 1.4); scene.add(sign);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 0.94), new THREE.MeshLambertMaterial({ map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.2 })); face.rotation.y = Math.PI / 2; face.position.set(DOOR_X + 0.24, 3.0, DOOR_Z - 1.4); scene.add(face); cafeB.signMat = face.material;
+  for (const dz of [-2.2, -0.9]) { const tbl = solid(new THREE.CylinderGeometry(0.45, 0.45, 0.06, 12), lam(0xe8e2d6)); tbl.position.set(DOOR_X + 1.2, 0.3, DOOR_Z + dz - 1.6); scene.add(tbl); const leg = solid(new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8), lam(0x3a3f48)); leg.position.set(DOOR_X + 1.2, -0.1, DOOR_Z + dz - 1.6); scene.add(leg); }
+}
+const frontDoor = new THREE.Group(); frontDoor.position.set(DOOR_X + 0.1, -0.5, DOOR_Z - 0.55); scene.add(frontDoor);
+const leaf = solid(new THREE.BoxGeometry(0.08, 2.1, 1.1), lam(0x5a3a2a)); leaf.position.set(0, 1.05, 0.55); frontDoor.add(leaf);
+
+// flagpole in the plaza centre; the flag is a cloth plane we wave by hand each frame
+const POLE = new THREE.Vector3(0, -0.5, -1.0); const POLE_H = 9.0;
+{ const base = solid(new THREE.CylinderGeometry(0.9, 1.1, 0.5, 10), lam(0xb9b3a8)); base.position.set(POLE.x, POLE.y + 0.25, POLE.z); scene.add(base); const pole = solid(new THREE.CylinderGeometry(0.07, 0.1, POLE_H, 10), lam(0xd8dde6)); pole.position.set(POLE.x, POLE.y + POLE_H / 2, POLE.z); scene.add(pole); const ball = solid(new THREE.IcosahedronGeometry(0.16, 1), lam(0xd9b84a)); ball.position.set(POLE.x, POLE.y + POLE_H + 0.1, POLE.z); scene.add(ball); }
+function flagTexture(stars) {
+  const c = document.createElement('canvas'); c.width = 760; c.height = 400; const g = c.getContext('2d');
+  for (let i = 0; i < 13; i++) { g.fillStyle = i % 2 ? '#f4f1ea' : '#c43a3a'; g.fillRect(0, i * 400 / 13, 760, 400 / 13 + 1); }
+  g.fillStyle = '#2b3f80'; g.fillRect(0, 0, 304, 400 * 7 / 13);
+  g.fillStyle = '#f4f1ea';
+  const cols = stars <= 50 ? 6 : 15, rows = Math.ceil(stars / cols); const cw = 304 / (cols + 1), rh = (400 * 7 / 13) / (rows + 1); const r = Math.min(cw, rh) * 0.34;
+  let k = 0; for (let y = 0; y < rows && k < stars; y++) for (let x = 0; x < cols && k < stars; x++, k++) { const cx = cw * (x + 1), cy = rh * (y + 1); g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5; const rr = i % 2 ? r * 0.45 : r; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); } g.closePath(); g.fill(); }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex;
+}
+const flagTex50 = flagTexture(50), flagTex195 = flagTexture(195);
+const flagGeo = new THREE.PlaneGeometry(2.4, 1.3, 16, 8); const flagBase = flagGeo.attributes.position.array.slice();
+const flag = new THREE.Mesh(flagGeo, new THREE.MeshLambertMaterial({ map: flagTex50, side: THREE.DoubleSide })); flag.castShadow = true; scene.add(flag);
+// A-frame boards on the plaza that flip from metric/euro to imperial/dollar
+function boardTexture(lines, color) { const c = document.createElement('canvas'); c.width = 512; c.height = 400; const g = c.getContext('2d'); g.fillStyle = '#f4efe6'; g.fillRect(0, 0, 512, 400); g.fillStyle = color; g.fillRect(0, 0, 512, 90); g.fillStyle = '#f4efe6'; g.font = '700 54px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(lines[0], 256, 45); g.fillStyle = '#2b2f3a'; g.font = '700 74px Inter, sans-serif'; for (let i = 1; i < lines.length; i++) g.fillText(lines[i], 256, 150 + (i - 1) * 100); const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex; }
+const boards = [];
+for (const [x, z, ry, before, after, col, flipAt] of [
+  [-4.6, 5.8, 0.5, ['TO THE COAST', '100 km'], ['TO THE COAST', '62 mi'], '#2f7fbf', 16.2],
+  [4.8, 5.4, -0.5, ['TODAY', '20 °C'], ['TODAY', '68 °F'], '#c98a2e', 18.0],
+  [-6.6, -3.4, 1.0, ['COFFEE', '€3.50'], ['COFFEE', '$3.50', 'free refills'], '#2f6f4e', 20.2]]) {
+  const g = new THREE.Group(); g.position.set(x, -0.5, z); g.rotation.y = ry; scene.add(g);
+  const piv = new THREE.Group(); piv.position.y = 1.3; g.add(piv);
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.0), new THREE.MeshLambertMaterial({ map: boardTexture(before, col) })); front.position.set(0, -0.3, 0.03); piv.add(front);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.0), new THREE.MeshLambertMaterial({ map: boardTexture(after, col) })); back.position.set(0, -0.3, -0.03); back.rotation.y = Math.PI; piv.add(back);
+  const panel = solid(new THREE.BoxGeometry(1.36, 1.06, 0.04), lam(0x5a3a2a)); panel.position.y = -0.3; piv.add(panel);
+  for (const sx of [-0.6, 0.6]) { const legm = solid(new THREE.BoxGeometry(0.08, 1.4, 0.08), lam(0x5a3a2a)); legm.position.set(sx, 0.7, 0); g.add(legm); }
+  boards.push({ g, piv, flipAt });
+}
+// vote booth and the queue path around the plaza
+const BOOTH = new THREE.Vector3(5.6, -0.5, -3.8);
+{ const booth = new THREE.Group(); booth.position.copy(BOOTH); booth.rotation.y = -0.4; scene.add(booth); const body = solid(roundedBox(1.6, 2.2, 1.2, 0.1), lam(0x2b3f80)); body.position.y = 1.1; booth.add(body); const roof = solid(new THREE.BoxGeometry(1.9, 0.12, 1.5), lam(0xc43a3a)); roof.position.y = 2.26; booth.add(roof); const counter = solid(new THREE.BoxGeometry(1.0, 0.1, 0.4), lam(0xf4efe6)); counter.position.set(0, 1.0, 0.75); booth.add(counter);
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160; const g = c.getContext('2d'); g.fillStyle = '#f4efe6'; g.fillRect(0, 0, 512, 160); g.fillStyle = '#2b3f80'; g.font = '800 110px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('VOTE', 256, 84); const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.47), new THREE.MeshLambertMaterial({ map: tex })); sign.position.set(0, 1.75, 0.61); booth.add(sign); }
+const QUEUE = []; { // a path that snakes around the plaza, spaced 1.25 apart, starting at the booth
+  const pts = [new THREE.Vector3(4.4, -0.5, -2.6), new THREE.Vector3(2.0, -0.5, -2.2), new THREE.Vector3(-1.0, -0.5, -2.6), new THREE.Vector3(-4.0, -0.5, -2.0), new THREE.Vector3(-6.2, -0.5, 0.2), new THREE.Vector3(-5.6, -0.5, 3.2), new THREE.Vector3(-3.0, -0.5, 4.6), new THREE.Vector3(0.0, -0.5, 4.4), new THREE.Vector3(3.0, -0.5, 4.8), new THREE.Vector3(5.8, -0.5, 3.6), new THREE.Vector3(7.4, -0.5, 1.0), new THREE.Vector3(7.6, -0.5, -1.6)];
+  const curve = new THREE.CatmullRomCurve3(pts); const len = curve.getLength(); const n = Math.floor(len / 1.25);
+  for (let i = 0; i < n; i++) QUEUE.push(curve.getPointAt(i / n)); QUEUE.curve = curve; }
+// clocks, tax form, anthem sheet panels
+function panelSprite(w, h, scale) { const c = document.createElement('canvas'); c.width = w; c.height = h; const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 })); s.scale.set(scale, scale * h / w, 1); scene.add(s); return { c, g: c.getContext('2d'), tex, s }; }
+const clocksP = panelSprite(900, 520, 3.2);
+{ const g = clocksP.g; g.fillStyle = 'rgba(10,16,30,0.88)'; g.beginPath(); g.roundRect(10, 10, 880, 500, 36); g.fill(); g.strokeStyle = '#7cf5ff'; g.lineWidth = 8; g.stroke(); g.fillStyle = '#e6fbff'; g.font = '700 54px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('ONE COUNTRY · 24 TIME ZONES', 450, 70);
+  const cities = [['NEW YORK', '18:30'], ['LONDON', '23:30'], ['TOKYO', '08:30'], ['SYDNEY', '10:30'], ['CAIRO', '01:30'], ['RIO', '20:30'], ['DELHI', '05:00'], ['LAGOS', '00:30']];
+  cities.forEach(([n, tm], i) => { const x = 120 + (i % 4) * 220, y = 180 + Math.floor(i / 4) * 170; g.strokeStyle = '#e6fbff'; g.lineWidth = 5; g.beginPath(); g.arc(x, y, 46, 0, 6.28); g.stroke(); const h = parseInt(tm) % 12, m = parseInt(tm.slice(3)); g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.sin((h + m / 60) / 12 * 6.28) * 28, y - Math.cos((h + m / 60) / 12 * 6.28) * 28); g.moveTo(x, y); g.lineTo(x + Math.sin(m / 60 * 6.28) * 40, y - Math.cos(m / 60 * 6.28) * 40); g.stroke(); g.fillStyle = '#9ff3ff'; g.font = '600 26px Inter, sans-serif'; g.fillText(n, x, y + 72); g.fillStyle = '#e6fbff'; g.font = '700 30px Inter, sans-serif'; g.fillText(tm, x, y + 102); }); clocksP.tex.needsUpdate = true; }
+const taxP = panelSprite(700, 900, 1.3);
+{ const g = taxP.g; g.fillStyle = '#f4efe6'; g.beginPath(); g.roundRect(10, 10, 680, 880, 20); g.fill(); g.strokeStyle = '#2b2f3a'; g.lineWidth = 6; g.stroke(); g.fillStyle = '#2b2f3a'; g.font = '800 70px Inter, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText('FORM 1040', 50, 90); g.font = '600 40px Inter, sans-serif'; g.fillText('WORLD EDITION · APRIL', 50, 160); g.fillStyle = '#8a8f99'; for (let i = 0; i < 9; i++) { g.fillRect(50, 230 + i * 70, 420 + (i % 3) * 60, 18); g.strokeStyle = '#2b2f3a'; g.lineWidth = 3; g.strokeRect(540, 212 + i * 70, 110, 44); } g.fillStyle = '#c43a3a'; g.font = '800 54px Inter, sans-serif'; g.fillText('DUE: 8,000,000,000 PEOPLE', 50, 860); taxP.tex.needsUpdate = true; }
+const anthemP = panelSprite(600, 420, 1.5);
+{ const g = anthemP.g; g.fillStyle = '#f4efe6'; g.beginPath(); g.roundRect(10, 10, 580, 400, 20); g.fill(); g.fillStyle = '#2b2f3a'; g.font = '800 44px Inter, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('THE ANTHEM', 300, 60); g.font = '600 34px Inter, sans-serif'; g.fillText('(learned this afternoon)', 300, 110); g.strokeStyle = '#2b2f3a'; g.lineWidth = 3; for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(40, 190 + i * 40); g.lineTo(560, 190 + i * 40); g.stroke(); } g.fillStyle = '#2b2f3a'; for (let i = 0; i < 9; i++) { g.beginPath(); g.ellipse(80 + i * 58, 190 + (i * 7 % 5) * 40, 14, 10, -0.4, 0, 6.28); g.fill(); g.fillRect(90 + i * 58, 190 + (i * 7 % 5) * 40 - 70, 4, 70); } anthemP.tex.needsUpdate = true; }
+// balls for the "football" gag
+const soccer = solid(new THREE.IcosahedronGeometry(0.22, 1), lam(0xf4f1ea)); soccer.visible = false; scene.add(soccer);
+const football = solid(new THREE.IcosahedronGeometry(0.22, 1), lam(0x7a4a2e)); football.scale.set(1.45, 0.85, 0.85); football.visible = false; scene.add(football);
+// fireworks
+const fireworks = [];
+for (let k = 0; k < 6; k++) { const n = 90; const pos = new Float32Array(n * 3); const seeds = []; for (let i = 0; i < n; i++) { const az = R(0, 6.28), el = R(-1.3, 1.3); seeds.push({ dx: Math.cos(el) * Math.cos(az), dy: Math.sin(el), dz: Math.cos(el) * Math.sin(az), v: R(5, 9) }); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: [0xc43a3a, 0xf4f1ea, 0x4a6fe0, 0xc43a3a, 0xf4f1ea, 0x4a6fe0][k], size: 0.9, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, map: radialTexture(), alphaTest: 0.01, fog: false })); scene.add(pts);
+  fireworks.push({ pts, pos, seeds, t0: 44.4 + k * 1.3, origin: new THREE.Vector3(R(-8, 8), R(13, 19), R(-26, -14)) }); }
+const paradeLight = new THREE.PointLight(0xffd27a, 0, 30, 1.4); paradeLight.position.set(0, 7, 0); scene.add(paradeLight);
+const moonLamp = new THREE.PointLight(0x9fb4ff, 0, 30, 1.4); moonLamp.position.set(2, 6, 4); scene.add(moonLamp);
+
+// ---------------------------------------------------------------------------
+// People
+// ---------------------------------------------------------------------------
+const peds = makePedestrians(world, [
+  { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: 1, count: 7, speed: 1.3 }, { axis: 'x', at: L.farWalk, from: -50, to: 50, dir: -1, count: 6, speed: 1.15 },
+  { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: 1, count: 5, speed: 1.2 }, { axis: 'x', at: L.nearWalk, from: -50, to: 50, dir: -1, count: 5, speed: 1.35 },
+], { gap: 3.0, laneOffset: 0.45 });
+const hero = person(world, { skin: 0xf1c27d, shirt: 0xf4f1ea, pants: 0x2b3a55, hair: 0x2a1a0e, jacket: 0x7a3a2e, hairStyle: 'short', bag: false }); scene.add(hero);
+const cup = solid(new THREE.CylinderGeometry(0.09, 0.07, 0.24, 10), lam(0xf4efe6)); cup.position.set(0, -0.78, 0.04); hero.userData.limbs.ra.add(cup); const lid = solid(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 10), lam(0x3a2a1a)); lid.position.y = 0.13; cup.add(lid);
+const heroFlag = new THREE.Group(); { const stick = solid(new THREE.BoxGeometry(0.03, 0.6, 0.03), lam(0xd8dde6)); heroFlag.add(stick); const f = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.24), new THREE.MeshLambertMaterial({ map: flagTex195, side: THREE.DoubleSide })); f.position.set(0.2, 0.18, 0); heroFlag.add(f); } heroFlag.position.set(0, -0.72, 0.1); heroFlag.rotation.x = -0.4; hero.userData.limbs.la.add(heroFlag); heroFlag.visible = false;
+// the flag raiser (a city worker), the vendor who flips boards, the queue, the parade crowd
+const worker = person(world, { shirt: 0xff8a3d, pants: 0x2b3a55, hairStyle: 'cap', jacket: false, bag: false }); scene.add(worker);
+const vendor = person(world, { shirt: 0x2f6f4e, pants: 0x3a3a3a, hairStyle: 'short', jacket: false, bag: false }); scene.add(vendor);
+const queuers = []; for (let i = 0; i < QUEUE.length - 1; i++) { const g = person(world, { bag: rng() < 0.4 }); g.visible = false; scene.add(g); queuers.push({ g, slot: i + 1, from: new THREE.Vector3(R(-14, 14), -0.5, 9.5), t0: 24.6 + i * 0.32 + R(0, 0.1), ph: R(0, 6.28) }); }
+const thrower = person(world, { shirt: 0x4a6fe0, hairStyle: 'cap', jacket: false, bag: false }); scene.add(thrower);
+const catcher = person(world, { shirt: 0xc43a3a, hairStyle: 'long', jacket: false, bag: false }); scene.add(catcher);
+const crowd = []; for (let i = 0; i < 12; i++) { const g = person(world, { bag: false }); g.visible = false; scene.add(g); const fl = heroFlag.clone(); fl.visible = true; g.userData.limbs.ra.add(fl); fl.position.set(0, -0.72, 0.1); fl.rotation.x = -0.4; crowd.push({ g, pos: new THREE.Vector3(-6 + (i % 6) * 2.4 + Math.floor(i / 6) * 1.2, -0.5, 3.0 + Math.floor(i / 6) * 1.6), ph: R(0, 6.28) }); }
+
+// ---------------------------------------------------------------------------
+// Camera & overlay
+// ---------------------------------------------------------------------------
+const CAM = {
+  x: [[0, -4.5], [5.5, -3.0], [7, -1.0], [14.5, -0.5], [16, -1.5], [23, -2.5], [25, 1.5], [32.5, 2.0], [34, 1.0], [42.5, 0.6], [44, -0.5], [52, -0.5], [53.5, 3.0], [60, 4.5]],
+  y: [[0, 1.9], [5.5, 2.1], [7, 2.6], [14.5, 2.8], [16, 2.6], [23, 2.4], [25, 6.0], [32.5, 5.5], [34, 2.3], [42.5, 2.3], [44, 3.6], [52, 3.8], [53.5, 2.2], [60, 2.8]],
+  z: [[0, 6.5], [5.5, 10.0], [7, 9.5], [14.5, 9.0], [16, 10.5], [23, 9.0], [25, 15.0], [32.5, 13.5], [34, 7.5], [42.5, 7.0], [44, 11.5], [52, 12.0], [53.5, 6.5], [60, 8.5]],
+  tx: [[0, -10.5], [5.5, -7.0], [7, 0], [14.5, 0], [16, -3.2], [23, -3.8], [25, 0], [32.5, 0.5], [34, -1.0], [42.5, -0.5], [44, 0], [52, 0], [53.5, 1.0], [60, 1.5]],
+  ty: [[0, 0.5], [5.5, 0.9], [7, 4.0], [14.5, 5.5], [16, 0.9], [23, 0.9], [25, 1.0], [32.5, 1.0], [34, 1.4], [42.5, 1.5], [44, 3.2], [52, 3.8], [53.5, 1.0], [60, 1.0]],
+  tz: [[0, 2.4], [5.5, 5.0], [7, -1], [14.5, -1], [16, 3.2], [23, 1.0], [25, 0.5], [32.5, 0.5], [34, -1.5], [42.5, -1.5], [44, -3], [52, -4], [53.5, 1.5], [60, 1.0]],
+};
+const overlay = createOverlay({ highlight: /(a vote|the same offer|a flag goes up|fifty stars|one hundred and ninety-five|the signs change|kilometers become miles|sixty-eight|charges in dollars|free refills|biggest election in history|eight billion voters|one very long line|around the square twice|the catch|twenty-four time zones|two different sports|the same tax form in april|the parade|another country yesterday|an anthem they learned that afternoon|biggest country in history|longest line at the dmv|it moved one spot)/gi });
+const hud = { value: document.getElementById('hudValue'), label: document.getElementById('hudLabel') };
+function updateHud(t) {
+  let label = 'Countries', value = '195', color = '#fff';
+  if (t >= 10.8 && t < 15) { label = 'States'; value = String(Math.round(kf(t, [[10.8, 50], [13.6, 195]], x => x))); color = '#9ff3ff'; }
+  else if (t >= 15 && t < 24) { label = 'Signs changed'; value = String(Math.round(kf(t, [[15.5, 0], [22.5, 3140]], x => x))); color = '#9ff3ff'; }
+  else if (t >= 24 && t < 33) { label = 'Voters in line'; value = Math.round(kf(t, [[24.4, 0], [31.5, 8000000000]], x => x)).toLocaleString('en-US'); color = '#ffd27a'; }
+  else if (t >= 33 && t < 43.5) { label = 'Time zones'; value = '24'; color = '#9ff3ff'; }
+  else if (t >= 43.5 && t < 52.5) { label = 'Anthem learned'; value = 'This afternoon'; color = '#ffd27a'; }
+  else if (t >= 52.5) { label = 'Line moved'; value = t >= 57.6 ? '1 spot' : '0 spots'; color = '#ff9fb0'; }
+  hud.label.textContent = label; hud.value.textContent = value; hud.value.style.color = color; hud.value.style.fontSize = value.length > 9 ? '72px' : '';
+}
+
+// ---------------------------------------------------------------------------
+// Blocking helpers
+// ---------------------------------------------------------------------------
+function walk(g, from, to, u, t, speed = 9, gait = 'walk') { g.position.lerpVectors(from, to, u); g.position.y = -0.5; g.rotation.y = Math.atan2(to.x - from.x, to.z - from.z); animateGait(g, t * speed, gait); }
+function idle(g, pos, ry, t, ph = 0) { g.position.copy(pos); g.position.y = -0.5; g.rotation.y = ry; animateGait(g, t * 1.4 + ph, 'idle'); }
+function faceTo(g, target) { g.rotation.y = Math.atan2(target.x - g.position.x, target.z - g.position.z); }
+function pullRope(g, t, u) { const Lb = g.userData.limbs; const s = Math.sin(t * 5); Lb.la.rotation.x = (-2.2 + s * 0.5) * u; Lb.ra.rotation.x = (-2.2 - s * 0.5) * u; Lb.la.rotation.z = 0.15; Lb.ra.rotation.z = -0.15; Lb.head.rotation.x = -0.5 * u; }
+function waveFlag(g, t, ph) { const Lb = g.userData.limbs; Lb.ra.rotation.x = -2.4 + Math.sin(t * 4 + ph) * 0.3; Lb.ra.rotation.z = -0.5 + Math.sin(t * 4 + ph) * 0.4; Lb.head.rotation.x = -0.3; g.position.y = -0.5 + Math.max(0, Math.sin(t * 4 + ph)) * 0.08; }
+function sing(g, t, ph) { const Lb = g.userData.limbs; Lb.head.rotation.x = -0.35 + Math.sin(t * 2.2 + ph) * 0.05; Lb.la.rotation.x = -0.9; Lb.la.rotation.z = 0.35; }
+function throwPose(g, u) { const Lb = g.userData.limbs; Lb.ra.rotation.x = u < 0.5 ? -0.5 - 2.0 * smooth(u / 0.5) : -2.5 + 2.2 * smooth((u - 0.5) / 0.5); }
+function catchPose(g, u) { const Lb = g.userData.limbs; Lb.la.rotation.x = -1.6 * u; Lb.ra.rotation.x = -1.6 * u; Lb.la.rotation.z = 0.3 * u; Lb.ra.rotation.z = -0.3 * u; }
+const STAND = new THREE.Vector3(-3.8, -0.5, 2.2);
+function heroPose(t) {
+  const OUT = new THREE.Vector3(DOOR_X + 1.5, -0.5, DOOR_Z);
+  if (t < 1.0) return { pos: new THREE.Vector3(DOOR_X - 0.7, -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'idle', cup: true, push: smooth((t - 0.4) / 0.6) };
+  if (t < 2.4) { const u = smooth((t - 1.0) / 1.4); return { pos: new THREE.Vector3(lerp(DOOR_X - 0.7, OUT.x, u), -0.5, DOOR_Z), ry: Math.PI / 2, mode: 'walk', phase: t * 9, cup: true, push: 1 - smooth((t - 1.6) / 0.6) }; }
+  if (t < 5.6) { const u = smooth((t - 2.4) / 3.2); return { pos: OUT.clone().lerp(STAND, u), ry: Math.atan2(STAND.x - OUT.x, STAND.z - OUT.z), mode: 'walk', phase: t * 9, cup: true }; }
+  if (t < 24.0) return { pos: STAND.clone(), ry: Math.atan2(POLE.x - STAND.x, POLE.z - STAND.z), mode: 'idle', cup: true, lookUp: win(t, 8.5, 14.5, 0.8, 0.8), sip: (t > 16.5 && t < 17.8) };
+  // joins the back of the queue (slot 0 is the booth; the hero takes the last slot, then everyone shuffles one spot at the end)
+  const last = QUEUE[QUEUE.length - 1];
+  if (t < 27.0) { const u = smooth((t - 24.0) / 3.0); return { pos: STAND.clone().lerp(last, u), ry: Math.atan2(last.x - STAND.x, last.z - STAND.z), mode: 'walk', phase: t * 9, cup: false }; }
+  if (t < 33.0) return { pos: last.clone(), ry: Math.atan2(QUEUE[QUEUE.length - 2].x - last.x, QUEUE[QUEUE.length - 2].z - last.z), mode: 'idle', cup: false, checkWatch: win(t, 29.5, 31.5, 0.5, 0.5) };
+  if (t < 43.5) { const spot = new THREE.Vector3(-1.2, -0.5, 1.4); const u = smooth((t - 33.0) / 1.6); return { pos: last.clone().lerp(spot, u), ry: u < 1 ? Math.atan2(spot.x - last.x, spot.z - last.z) : 0.3, mode: u < 1 ? 'walk' : 'idle', phase: t * 9, cup: false, catchU: win(t, 36.4, 38.2, 0.4, 0.5), readTax: win(t, 40.0, 43.2, 0.6, 0.4) }; }
+  if (t < 52.5) { const spot = new THREE.Vector3(0.6, -0.5, 4.8); const u = smooth((t - 43.5) / 1.4); return { pos: new THREE.Vector3(-1.2, -0.5, 1.4).lerp(spot, u), ry: u < 1 ? Math.atan2(spot.x + 1.2, spot.z - 1.4) : Math.PI, mode: u < 1 ? 'walk' : 'idle', phase: t * 9, cup: false, flag: t > 44.6, sing: win(t, 47.0, 52.3, 0.6, 0.4) }; }
+  // back in the line at night; at 57.6 everyone shuffles one spot
+  const spotA = last.clone(), spotB = QUEUE[QUEUE.length - 2].clone(); const u0 = smooth((t - 52.5) / 1.6); const shuffle = smooth((t - 57.6) / 0.9);
+  const pos = new THREE.Vector3(0.6, -0.5, 4.8).lerp(spotA, u0).lerp(spotB, shuffle * u0);
+  return { pos, ry: u0 < 1 ? Math.atan2(spotA.x - 0.6, spotA.z - 4.8) : Math.atan2(spotB.x - spotA.x, spotB.z - spotA.z), mode: (u0 < 1 || (shuffle > 0.02 && shuffle < 0.98)) ? 'walk' : 'idle', phase: t * 8, amp: u0 < 1 ? 1 : 0.5, cup: false, checkWatch: win(t, 54.2, 56.4, 0.5, 0.5) };
+}
+function poseLimbs(g, p, t) {
+  const Lb = g.userData.limbs; g.position.copy(p.pos); g.rotation.y = p.ry;
+  if (p.mode === 'walk') animateGait(g, p.phase, 'walk', p.amp ?? 1);
+  else { animateGait(g, t * 1.4, 'idle'); if (p.cup) { Lb.ra.rotation.x = p.sip ? -2.4 : -1.1; Lb.ra.rotation.z = p.sip ? -0.5 : -0.04; } Lb.head.rotation.x = p.sip ? -0.2 : p.lookUp ? -0.55 * p.lookUp : 0;
+    if (p.checkWatch) { Lb.la.rotation.x = -1.5 * p.checkWatch; Lb.la.rotation.z = 0.5 * p.checkWatch; Lb.head.rotation.x = 0.5 * p.checkWatch; }
+    if (p.catchU) catchPose(g, p.catchU);
+    if (p.readTax) { Lb.la.rotation.x = -1.3 * p.readTax; Lb.ra.rotation.x = -1.3 * p.readTax; Lb.la.rotation.z = 0.25; Lb.ra.rotation.z = -0.25; Lb.head.rotation.x = 0.45 * p.readTax; }
+    if (p.sing) sing(g, t, 0); if (p.flag) waveFlag(g, t, 0.5); }
+  if (p.mode === 'walk' && p.cup) { Lb.ra.rotation.x = -1.1; Lb.ra.rotation.z = -0.04; }
+  if (p.push) { Lb.la.rotation.x = -1.3 * p.push; Lb.la.rotation.z = -0.1 * p.push; }
+  cup.visible = !!p.cup; heroFlag.visible = !!p.flag;
+}
+
+// ---------------------------------------------------------------------------
+// Per-frame update
+// ---------------------------------------------------------------------------
+const tmpV = new THREE.Vector3();
+window.renderAt = function (t) {
+  const { nt } = world.updateEnvironment(t, SKY);
+  sunLight.position.set(lerp(-34, 30, clamp(t / 40, 0, 1)), lerp(20, 34, Math.sin(clamp(t / 40, 0, 1) * Math.PI)), 18);
+  moonLamp.intensity = nt * 40;
+  for (const b of buildings) { b.mat.emissiveIntensity = clamp(nt * 1.1, 0, 1) * 0.95; if (b.store) b.store.material.emissiveIntensity = 0.25 + 0.75 * nt; }
+  cafeB.signMat.emissiveIntensity = 0.2 + 0.8 * nt;
+  for (const h of lampHeads) h.material.color.set(nt > 0.2 ? 0xfff0c8 : 0x6a6f78);
+  updateTrafficLights(trafficLights, t, 1);
+  for (const c of cars) { const d = c.userData; const x = ((d.x0 + d.dir * d.speed * t + 50) % 100 + 100) % 100 - 50; c.position.set(x, -0.5, d.laneZ); c.rotation.y = d.dir > 0 ? 0 : Math.PI; for (const w of d.wheels) w.rotation.y = -t * d.speed * 3; d.tail.material.color.set(0xff3b2f).multiplyScalar(0.6 + 0.4 * nt); d.lights.material.color.set(0xfff2c0).multiplyScalar(0.4 + 0.6 * nt); }
+  for (const p of peds) { placePedestrian(p, p.speed * t); animateGait(p.g, t * 7 * p.speed + p.ph, 'walk'); }
+
+  // --- the flag: raised by the worker 8.2-12.6, stars multiply at 12.0, cloth waves ---
+  const raise = smooth((t - 8.2) / 4.4); const flagY = lerp(POLE.y + 1.2, POLE.y + POLE_H - 0.9, raise);
+  flag.position.set(POLE.x + 1.2, flagY, POLE.z); flag.material.map = t >= 12.0 ? flagTex195 : flagTex50;
+  { const p = flagGeo.attributes.position; for (let i = 0; i < p.count; i++) { const x = flagBase[i * 3], y = flagBase[i * 3 + 1]; const k = (x + 1.2) / 2.4; p.setXYZ(i, x, y + Math.sin(t * 5 + k * 6) * 0.06 * k, Math.sin(t * 6 + k * 5 + y * 2) * 0.16 * k); } p.needsUpdate = true; flagGeo.computeVertexNormals(); }
+  const WORKER_SPOT = new THREE.Vector3(POLE.x - 0.9, -0.5, POLE.z + 0.9);
+  if (t < 8.0) { const u = clamp((t - 4.2) / 3.6, 0, 1); walk(worker, new THREE.Vector3(9.5, -0.5, 7.5), WORKER_SPOT, smooth(u), t, 9, u < 1 ? 'walk' : 'idle'); if (u >= 1) faceTo(worker, POLE); }
+  else if (t < 13.4) { idle(worker, WORKER_SPOT, 0, t); faceTo(worker, POLE); pullRope(worker, t, win(t, 8.0, 12.8, 0.3, 0.5)); }
+  else if (t < 16.0) { const u = smooth((t - 13.4) / 2.4); walk(worker, WORKER_SPOT, new THREE.Vector3(9.5, -0.5, 7.5), u, t); }
+  else worker.visible = t < 16.0;
+
+  // --- boards flipped by the vendor at 16.2, 18.0, 20.2 ---
+  for (const b of boards) b.piv.rotation.y = smooth((t - b.flipAt) / 0.7) * Math.PI;
+  { const stops = boards.map(b => new THREE.Vector3(b.g.position.x + Math.sin(b.g.rotation.y) * 0.9, -0.5, b.g.position.z + Math.cos(b.g.rotation.y) * 0.9)); const times = [[14.6, 16.0], [16.8, 17.8], [18.8, 20.0]];
+    let placed = false;
+    for (let i = 0; i < 3; i++) { const [a, bb] = times[i]; const from = i === 0 ? new THREE.Vector3(2.0, -0.5, 8.5) : stops[i - 1];
+      if (t >= a && t < bb) { walk(vendor, from, stops[i], smooth((t - a) / (bb - a)), t); placed = true; break; }
+      if (t >= bb && (i === 2 || t < times[i + 1][0])) { idle(vendor, stops[i], 0, t); faceTo(vendor, b_(i)); const flip = win(t, boards[i].flipAt - 0.3, boards[i].flipAt + 0.6, 0.2, 0.3); vendor.userData.limbs.ra.rotation.x = -1.3 * flip; vendor.userData.limbs.la.rotation.x = -1.3 * flip; placed = true; break; } }
+    if (!placed) { if (t < 14.6) walk(vendor, new THREE.Vector3(2.0, -0.5, 8.5), new THREE.Vector3(2.0, -0.5, 8.5), 0, t, 9, 'idle'); else { const u = smooth((t - 21.2) / 2.4); walk(vendor, stops[2], new THREE.Vector3(2.0, -0.5, 9.5), u, t, 9, u < 1 ? 'walk' : 'idle'); } }
+    function b_(i) { return boards[i].g.position; }
+    vendor.visible = t < 24; }
+
+  // --- the queue (24-33, and again 52.5-60): each joins the back and stops; at 57.6 everyone shuffles one slot ---
+  const shuffle = smooth((t - 57.6) / 0.9);
+  for (const q of queuers) {
+    const inLine = (t >= q.t0 && t < 33.0) || t >= 52.5; q.g.visible = inLine; if (!inLine) continue;
+    const target = QUEUE[q.slot], ahead = QUEUE[Math.max(0, q.slot - 1)];
+    if (t < 33.0) { const u = smooth((t - q.t0) / 2.2); walk(q.g, q.from, target, u, t, 9, u < 1 ? 'walk' : 'idle'); if (u >= 1) faceTo(q.g, ahead); }
+    else { const p = target.clone().lerp(ahead, shuffle); q.g.position.copy(p); q.g.position.y = -0.5; faceTo(q.g, ahead); if (shuffle > 0.02 && shuffle < 0.98) animateGait(q.g, t * 8, 'walk', 0.5); else animateGait(q.g, t * 1.4 + q.ph, 'idle'); if (t > 54 && q.slot % 3 === 0) { q.g.userData.limbs.la.rotation.x = -1.5; q.g.userData.limbs.head.rotation.x = 0.5; } }
+  }
+
+  // --- sunset: clocks panel, the two footballs, the tax form ---
+  clocksP.s.material.opacity = win(t, 33.6, 36.4, 0.5, 0.5); clocksP.s.position.set(0.2, 3.9, -0.5);
+  { const T = new THREE.Vector3(3.6, -0.5, 1.2), C = new THREE.Vector3(-1.2, -0.5, 1.4);
+    const on = t >= 33 && t < 43.5; thrower.visible = catcher.visible = on;
+    if (on) { idle(thrower, T, 0, t, 1); faceTo(thrower, C); idle(catcher, new THREE.Vector3(-3.6, -0.5, -1.0), 0, t, 2); faceTo(catcher, T);
+      const u1 = (t - 36.3) / 1.0, u2 = (t - 38.4) / 1.0;      // soccer ball to the hero, football to the catcher
+      throwPose(thrower, clamp(u1 < 1 ? u1 : u2, 0, 1)); if (u2 > 0 && u2 < 1.4) catchPose(catcher, win(u2, 0, 1.4, 0.3, 0.3));
+      soccer.visible = u1 > 0 && u1 < 1; if (soccer.visible) { soccer.position.lerpVectors(new THREE.Vector3(T.x - 0.3, 1.3, T.z + 0.2), new THREE.Vector3(C.x + 0.3, 1.3, C.z + 0.2), u1); soccer.position.y += Math.sin(u1 * Math.PI) * 1.4; soccer.rotation.x = t * 8; }
+      football.visible = u2 > 0 && u2 < 1; if (football.visible) { football.position.lerpVectors(new THREE.Vector3(T.x - 0.3, 1.3, T.z), new THREE.Vector3(-3.3, 1.3, -0.8), u2); football.position.y += Math.sin(u2 * Math.PI) * 1.6; football.rotation.z = t * 6; } } }
+  taxP.s.material.opacity = win(t, 40.2, 43.3, 0.5, 0.4); taxP.s.position.set(-0.2, 2.1, 1.2);
+
+  // --- night parade: crowd with flags, fireworks, anthem sheet ---
+  for (const c of crowd) { const on = t >= 43.5 && t < 52.5; c.g.visible = on; if (!on) continue; const arrive = smooth((t - 43.5 - (c.pos.x + 6) * 0.08) / 1.4); walk(c.g, c.pos.clone().add(new THREE.Vector3(0, 0, 6)), c.pos, arrive, t, 9, arrive < 1 ? 'walk' : 'idle'); if (arrive >= 1) { c.g.rotation.y = Math.PI; waveFlag(c.g, t, c.ph); if (t > 47) sing(c.g, t, c.ph); } }
+  anthemP.s.material.opacity = win(t, 47.4, 52.3, 0.5, 0.4); anthemP.s.position.set(0.6 - 0.9, 1.9, 4.8 + 0.5);
+  paradeLight.intensity = win(t, 44, 52.5, 1, 1) * 24;
+  for (const f of fireworks) { const u = (t - f.t0) / 1.8; const on = u > 0 && u < 1; f.pts.material.opacity = on ? (1 - u) : 0; if (on) { for (let i = 0; i < f.seeds.length; i++) { const s = f.seeds[i]; f.pos[i * 3] = f.origin.x + s.dx * s.v * u; f.pos[i * 3 + 1] = f.origin.y + s.dy * s.v * u - 4 * u * u; f.pos[i * 3 + 2] = f.origin.z + s.dz * s.v * u; } f.pts.geometry.attributes.position.needsUpdate = true; } }
+
+  // --- hero ---
+  const hp = heroPose(t); poseLimbs(hero, hp, t);
+  frontDoor.rotation.y = smooth((t - 0.45) / 0.9) * 1.55 * (1 - smooth((t - 2.6) / 1.3));
+
+  camera.position.set(kf(t, CAM.x) + Math.sin(t * 0.37) * 0.1, kf(t, CAM.y) + Math.sin(t * 0.5) * 0.05, kf(t, CAM.z));
+  camera.lookAt(kf(t, CAM.tx), kf(t, CAM.ty), kf(t, CAM.tz));
+  renderer.render(scene, camera);
+  overlay.update(t); updateHud(t);
+  return true;
+};
+window.renderAt(0);
+window.__sceneReady = true;
+</script>
+</body>
+</html>
